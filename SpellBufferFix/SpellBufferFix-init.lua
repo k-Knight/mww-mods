@@ -1,0 +1,417 @@
+local InputController = require("scripts/input_controller")
+local EventHandler = SE.event_handler
+
+local function try_find_client_spellcastingsystem()
+    local status, err = pcall(function()
+        repeat
+            if NetworkGameModeTrainingGroundsClientGame and NetworkGameModeTrainingGroundsClientGame.init then
+                if NetworkGameModeTrainingGroundsClientGame._old_init then
+                    break
+                end
+
+                k_log("[SpellBufferFix] overridng NetworkGameModeTrainingGroundsClientGame.init() !!!")
+                NetworkGameModeTrainingGroundsClientGame._old_init = NetworkGameModeTrainingGroundsClientGame.init
+
+                NetworkGameModeTrainingGroundsClientGame.init = function(self, context)
+                    NetworkGameModeClientGame.init(self, context)
+
+                    self.training_gui = GameModeTrainingGroundsGui(context, self.gamemode_settings, self.pending_level_events_array)
+                    context.hud_manager.game_mode_gui = self.training_gui
+
+                    self:reset_gamemode_state()
+
+                    self.hud_manager = context.hud_manager
+                    self.hud_manager.enable_hud_portraits = true
+                    self.hud_manager.enable_chat = true
+                    self.hud_manager.enable_team_scores = false
+                    self.hud_manager.enable_consumables = false
+                    self.hud_manager.custom_minimap_frame = "hud_frame_minimap_training_ground"
+
+                    self.hud_manager:rebuild_frames()
+
+                    self.transaction_handler = context.transaction_handler
+                end
+            end
+        until true
+
+        repeat
+            if ClientSpellCastingSystem and ClientSpellCastingSystem.update_spellcast_units then
+                if ClientSpellCastingSystem._old_update_spellcast_units then
+                    break
+                end
+
+                k_log("[SpellBufferFix] overriding ClientSpellCastingSystem.update_spellcast_units() !!!")
+                ClientSpellCastingSystem._old_update_spellcast_units = ClientSpellCastingSystem.update_spellcast_units
+
+                local ClientSpells = {
+                    Aoe = ClientSpells_Aoe,
+                    Beam = ClientSpells_Beam,
+                    Lightning = Spells_Lightning,
+                    LightningAoe = Spells_LightningAoe,
+                    Heal = Spells_Heal,
+                    Magick = ClientSpells_Magick,
+                    Projectile = ClientSpells_Projectile,
+                    Spray = ClientSpells_Spray,
+                    Shield = ClientSpells_Shield,
+                    Weapon = ClientSpells_Weapon,
+                    SelfShield = ClientSpells_SelfShield,
+                    Mine = ClientSpells_Mine,
+                    Barrier = ClientSpells_Barrier
+                }
+
+                local ESF = SpellSettings.element_slowdown_factor
+
+                local TEMP_CANCEL_DAMAGE_INFO_TABLE = {}
+
+                local function get_spell_multiplier(unit, spell, spell_data, player_variable_manager)
+                    local spell_element_mul = SpellSettings.spell_element_influence_multiplier[spell] or 1
+                    local is_table = type(spell_element_mul) == "table"
+
+                    if is_table or spell_element_mul ~= 0 then
+                        local multiplier = 1
+                        local affinity_multiplier = 1
+
+                        if is_table then
+                            for element, magnitude in pairs(spell_data.elements) do
+                                if magnitude > 0 then
+                                    affinity_multiplier = player_variable_manager:get_template_value(unit, element, spell:lower(), "movement_speed")
+
+                                    local element_multiplier = spell_element_mul[element] or spell_element_mul.default
+
+                                    if spell_data.elements.steam > 0 then
+                                        element_multiplier = spell_element_mul.default
+                                    end
+
+                                    if type(element_multiplier) == "table" then
+                                        multiplier = multiplier - element_multiplier[magnitude] * ESF * affinity_multiplier
+                                    else
+                                        multiplier = multiplier - element_multiplier * magnitude * ESF * affinity_multiplier
+                                    end
+                                end
+                            end
+                        else
+                            multiplier = multiplier - spell_element_mul * spell_data.num_elements * ESF
+                        end
+
+                        return multiplier
+                    end
+
+                    return nil
+                end
+
+                local function revert_element_speed_multiplier(u, spell, spell_data, player_variable_manager)
+                    local multiplier = get_spell_multiplier(u, spell, spell_data, player_variable_manager)
+
+                    if multiplier and spell_data.speed_multiplier_id then
+                        EntityAux.revert_speed_multiplier(u, spell_data.speed_multiplier_id, "spellcast")
+                    end
+                end
+
+                local function on_cast_spell(unit, extension, spell_context)
+                    local internal = extension.internal
+                    local ws = internal._waiting_spell
+                    local ws_name = ws.name
+                
+                    if ws_name then
+                        local spells = internal.spells
+                        local spells_data = internal.spells_data
+                
+                        spells[#spells + 1] = ws.name
+                        spells_data[#spells_data + 1] = ws.data
+                
+                        local spell_table = ClientSpells[ws_name]
+                
+                        if spell_table.on_cast then
+                            local spell_context = spell_context
+                
+                            spell_context.caster = unit
+                            spell_context.internal = internal
+                            spell_context.magick = nil
+                            spell_context.element_queue = nil
+                            spell_context.state = extension.state
+                            spell_context.target = nil
+                
+                            spell_table.on_cast(ws.data, spell_context)
+                        end
+                
+                        ws.name = nil
+                        ws.data = nil
+                    end
+                end
+
+                ClientSpellCastingSystem.update_spellcast_units = function(self, entities, entities_n, spell_update_context, dt)
+                    local SpellTypes = ClientSpells
+
+                    for n = 1, entities_n do
+                        repeat
+                            local extension_data = entities[n]
+                            local unit, extension = extension_data.unit, extension_data.extension
+                            local internal = extension.internal
+                            local input = extension.input
+                            local channeling = internal.channeling
+                            local channel_dur = internal.channel_duration
+                            local input_channel = input.channel
+                            local state = extension.state
+                            local inventory_extension = EntityAux.extension(unit, "inventory")
+
+                            local spells = {}
+                            local spells_data = {}
+
+                            for _, spell_name in pairs(internal.spells) do
+                                spells[#spells + 1] = spell_name
+                            end
+                            for _, spell_data in pairs(internal.spells_data) do
+                                spells_data[#spells_data + 1] = spell_data
+                            end
+
+                            internal.spells = spells
+                            internal.spells_data = spells_data
+
+                            handle_spellcast_scale(internal, state)
+
+                            if input.spellcast_scale_enabled then
+                                state.spellcast_scale_enabled = state.spellcast_scale_enabled + input.spellcast_scale_enabled
+                                input.spellcast_scale_enabled = nil
+                            end
+
+                            local scaled_dt = dt * state.spellcast_scale
+
+                            if state.spellcast_scale_enabled < 0 then
+                                scaled_dt = 0
+                            elseif state.spellcast_scale_enabled > 0 then
+                                local robe = inventory_extension.inventory.robe
+
+                                Unit.set_timescale(robe, state.spellcast_scale)
+                            end
+
+                            if input_channel then
+                                if channeling == false then
+                                    channel_dur = 0
+                                end
+
+                                channeling = true
+
+                                if math.floor(channel_dur) ~= math.floor(channel_dur + dt) then
+                                    k_log("[SpellBufferFix] triggering spell_channel_tick !!")
+                                    self.event_delegate:trigger3("spell_channel_tick", unit, internal.spells, channel_dur + dt)
+                                end
+
+                                channel_dur = channel_dur + dt
+                            else
+                                channeling = false
+                            end
+
+                            spell_update_context.scaled_dt = scaled_dt
+                            spell_update_context.spell_channel = channeling
+                            spell_update_context.caster = unit
+                            spell_update_context.channel_duration = channel_dur
+                            spell_update_context.explode_beam = input.explode_beam
+                            spell_update_context.melee_chain = input.melee_chain or 0
+                            spell_update_context.state = state
+                            spell_update_context.target = EntityAux.state(unit, "character").cursor_intersect_unit
+                            internal.channeling = channeling
+                            internal.channel_duration = channel_dur
+
+                            local ws = internal._waiting_spell
+
+                            if ws then
+                                local ws_name = ws.name
+                                local ws_data = ws.data
+
+                                if ws_name then
+                                    local waiting_time = ws.waiting_time - scaled_dt
+
+                                    ws.waiting_time = waiting_time
+
+                                    if waiting_time < 0 then
+                                        k_log("[SpellBufferFix] calling on_cast_spell !!")
+                                        on_cast_spell(unit, extension, self.spell_context)
+                                    else
+                                        local spell_table = ClientSpells[ws_name]
+
+                                        if spell_table.waiting_spell_update then
+                                            local keep = spell_table.waiting_spell_update(ws_data, spell_update_context)
+
+                                            if not keep then
+                                                k_log("[SpellBufferFix] triggering player_spell_cast_cancel #1 for :: " .. tostring(ws_name))
+                                                self.event_delegate:trigger2("player_spell_cast_cancel", unit, ws_name, self.spell_context.player_variable_manager)
+                                                revert_element_speed_multiplier(unit, ws_name, ws_data)
+
+                                                ws.name = nil
+                                                ws.data = nil
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+
+                            local j = 1
+
+                            for i = 1, #spells do
+                                local spell = spells[i]
+                                local data = spells_data[i]
+                                local current_spelltype = SpellTypes[spell]
+
+                                if not current_spelltype then
+                                    cat_printf_error("default", "[spellcasting] no spell_type named(%s)", spell)
+                                else
+                                    local val = current_spelltype.update(data, spell_update_context)
+
+                                    if val then
+                                        spells[j] = spell
+                                        spells_data[j] = data
+                                        j = j + 1
+                                    else
+                                        k_log("[SpellBufferFix] triggering player_spell_cast_cancel #2 for :: " .. tostring(spell))
+                                        self.event_delegate:trigger2("player_spell_cast_cancel", unit, spell, self.spell_context.player_variable_manager)
+                                        revert_element_speed_multiplier(unit, spell, data, self.spell_context.player_variable_manager)
+                                    end
+                                end
+                            end
+
+                            while spells[j] ~= nil do
+                                spells[j] = nil
+                                spells_data[j] = nil
+                                j = j + 1
+                            end
+
+                            state.charge_time_normalized = input.charge_time_normalized
+                            input.charge_time_normalized = nil
+                            state.overcharge_time_normalized = input.overcharge_time_normalized
+                            input.overcharge_time_normalized = nil
+
+                            local dont_cast = false
+                            if input.spell_type ~= "" then
+                                if internal.sbf_timer and internal.sbf_timer > 0 then
+                                    internal.sbf_timer = internal.sbf_timer - dt
+
+                                    if internal.sbf_force_on_timer then
+                                        dont_cast = true
+                                    else
+                                        local is_not_fwd = input.spell_type ~= "forward"
+                                        local spells = internal.spells
+                
+                                        for k = 1, #spells do
+                                            local spell = spells[k]
+                
+                                            if is_not_fwd and spell == "Projectile" then
+                                                dont_cast = true
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+
+                            if dont_cast then
+                                k_log("[SpellBufferFix] preventing spellcast :: " .. tostring(input.spell_type))
+                                break
+                            else
+                                internal.sbf_timer = 0.1
+                                internal.sbf_force_on_timer = nil
+                            end
+
+                            if not input.dirty_flag then
+                                break
+                            end
+
+                            local cancelled_all_spell_heuristic = true
+                            local cancel_all_spells_targets = {
+                                ["Shield"] = true,
+                                ["Beam"] = true,
+                                ["Spray"] = true,
+                                ["Projectile"] = true,
+                                ["Lightning"] = true,
+                                ["LightningAoe"] = true,
+                                ["Weapon"] = true,
+                                ["Aoe"] = true
+                            }
+
+                            for i = 1, #input.cancel_spell do
+                                local spell_type = input.cancel_spell[i]
+                                cancel_all_spells_targets[spell_type] = nil
+
+                                self:cancel_spell(unit, spell_type, extension, spell_update_context)
+
+                                input.cancel_spell[i] = nil
+                            end
+
+                            for k, v in pairs(cancel_all_spells_targets) do
+                                if v then
+                                    cancelled_all_spell_heuristic = false
+                                    break
+                                end
+                            end
+
+                            if cancelled_all_spell_heuristic then
+                                k_log("[SpellBufferFix] called all heuristic triggered, clearing input ...")
+                                local ws = internal._waiting_spell
+
+                                if ws then
+                                    ws.name = nil
+                                    ws.data = nil
+                                end
+
+                                input.spell_type = ""
+                                input.elements = nil
+
+                                internal.sbf_timer = 0.15
+                                internal.sbf_force_on_timer = true
+                                break
+                            end
+
+                            if input.spell_type ~= "" then
+                                internal.last_spell = input.spell_type
+    
+                                k_log("[SpellBufferFix] calling _handle_spellcast with :: " .. tostring(input.spell_type))
+                                self:_handle_spellcast(unit, input, internal, state)
+    
+                                input.spell_type = ""
+                                input.elements = nil
+                            end
+
+                            input.explode_beam = false
+
+                            if input.abort_spellcasting then
+                                k_log("[SpellBufferFix] abort_spellcasting !!")
+                                self:cancel_all_spells(unit, extension)
+
+                                input.abort_spellcasting = nil
+                                input.despawn_beam = true
+                                input.dirty_flag = true
+
+                                if inventory_extension then
+                                    local weapon = inventory_extension.inventory.weapon
+
+                                    if weapon then
+                                        local damage_info_extension = EntityAux.extension(weapon, "damage_info")
+
+                                        if damage_info_extension then
+                                            TEMP_CANCEL_DAMAGE_INFO_TABLE[1] = weapon
+
+                                            EntityAux.set_input_by_extension(damage_info_extension, "cancel_damage", TEMP_CANCEL_DAMAGE_INFO_TABLE)
+                                        end
+                                    end
+                                end
+                            end
+
+                            input.dirty_flag = false
+                        until true
+                    end
+                end
+            end
+        until true
+    end)
+
+    if not status then
+        k_log("[SpellBufferFix] error in try_find_client_spellcastingsystem() :: " .. tostring(err))
+    end
+
+    kUtil.task_scheduler.add(try_find_client_spellcastingsystem, 1000)
+end
+
+local function init_mod(context)
+    kUtil.task_scheduler.add(try_find_client_spellcastingsystem, 1000)
+end
+
+EventHandler.register_event("menu", "init", "SpellBufferFix_init", init_mod)

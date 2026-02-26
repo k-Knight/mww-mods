@@ -270,7 +270,15 @@ else
     --k_log("[kUtil] calling util.alloc_dbg_console() ...")
     --kUtil.alloc_dbg_console()
     
+    local mod_inited = false
+
     local function init_mod(context)
+        if mod_inited then
+            return
+        end
+
+        mod_inited = true
+
         if kUtil.runtime_init then
             return
         end

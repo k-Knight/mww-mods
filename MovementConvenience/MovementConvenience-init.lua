@@ -617,7 +617,15 @@ local function try_hook_needed_funcs()
     kUtil.task_scheduler.add(try_hook_needed_funcs, 1000)
 end
 
+local mod_inited = false
+
 local function init_mod(context)
+    if mod_inited then
+        return
+    end
+
+    mod_inited = true
+
     MovConv.mod_settingss = LOAD_GLOBAL_MOD_SETTINGS("MovementConvenience", MovConv.mod_settings)
     kUtil.add_on_tick_handler(check_mov_conv_status)
     kUtil.add_on_render_handler(render_mov_conv)

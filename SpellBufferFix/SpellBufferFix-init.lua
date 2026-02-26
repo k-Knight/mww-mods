@@ -451,7 +451,15 @@ local function try_find_client_spellcastingsystem()
     kUtil.task_scheduler.add(try_find_client_spellcastingsystem, 1000)
 end
 
+local mod_inited = false
+
 local function init_mod(context)
+    if mod_inited then
+        return
+    end
+
+    mod_inited = true
+
     kUtil.task_scheduler.add(try_find_client_spellcastingsystem, 1000)
 end
 

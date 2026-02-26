@@ -297,6 +297,9 @@ local function try_find_client_spellcastingsystem()
                                             if is_not_fwd and spell == "Projectile" then
                                                 dont_cast = true
                                                 break
+                                            elseif (not is_not_fwd) and spell == "Beam" then
+                                                dont_cast = true
+                                                break
                                             end
                                         end
                                     end

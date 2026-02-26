@@ -205,9 +205,15 @@ local status, err = pcall(function()
     end
 
     kUtil.on_update_listeners = {}
+    kUtil.on_render_listeners = {}
 
     kUtil.add_on_tick_handler = function (callback)
         local listeners = kUtil.on_update_listeners
+        listeners[#listeners + 1] = callback
+    end
+
+    kUtil.add_on_render_handler = function (callback)
+        local listeners = kUtil.on_render_listeners
         listeners[#listeners + 1] = callback
     end
 
@@ -215,15 +221,53 @@ local status, err = pcall(function()
         kUtil.task_scheduler.try_run_next_task()
 
         for k, v in pairs(kUtil.on_update_listeners) do
-            v(dt)
+            local status, err = pcall(v, dt)
+            if not status then
+                k_log("[kUtil] error running kUtil.on_update() :: " .. tostring(err))
+            end
         end
+    end
+
+    kUtil.on_render = function()
+        for k, v in pairs(kUtil.on_render_listeners) do
+            local status, err = pcall(v)
+
+            if not status then
+                k_log("[kUtil] error running kUtil.on_render() :: " .. tostring(err))
+            end
+        end
+    end
+
+    kUtil.is_hotkey_pressed = function (kbd_hotkey)
+        if kbd_hotkey then
+            local status = true
+
+            for _, key in ipairs(kbd_hotkey) do
+                if key == "mouse_forward" then
+                    status = status and Mouse_down("extra_2")
+                elseif key == "mouse_backward" then
+                    status = status and Mouse_down("extra_1")
+                elseif key == "ctrl" or key == "shift" or key == "alt" then
+                    local r_key = "right " .. key
+                    local l_key = "left " .. key
+
+                    status = status and (Keyboard_down(key) or Keyboard_down(r_key) or Keyboard_down(l_key))
+                else
+                    status = status and Keyboard_down(key)
+                end
+            end
+
+            return status
+        end
+
+        return false
     end
 end)
 
 if not status then
     print("[kUtil] error initializing library :: " .. tostring(err))
 else
-    k_log("[kUtil] calling util.alloc_dbg_console() ...")
+    --k_log("[kUtil] calling util.alloc_dbg_console() ...")
     --kUtil.alloc_dbg_console()
     
     local function init_mod(context)
@@ -237,6 +281,14 @@ else
         _UIContext.update = function(self, dt)
             kUtil.on_update(dt)
             return _UIContext._old_update(self, dt)
+        end
+
+        k_log("[kUtil] trying to append to _UIContext.render() ...")
+    
+        _UIContext._old_render = _UIContext.render
+        _UIContext.render = function(self)
+            kUtil.on_render()
+            return _UIContext._old_render(self)
         end
 
         kUtil.runtime_init = true

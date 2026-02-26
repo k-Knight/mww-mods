@@ -4,6 +4,9 @@ local EventHandler = SE.event_handler
 _G.MovConv = {
     bg_tex = "hud_element_arcane",
     fg_tex = "hud_element_arcane",
+    mod_settings = {
+        hotkey = {"mouse_forward"}
+    }
 }
 
 local render_mov_conv = function()
@@ -37,7 +40,7 @@ local render_mov_conv = function()
 end
 
 local check_mov_conv_status = function()
-    local state = kUtil.is_hotkey_pressed({"mouse_forward"})
+    local state = kUtil.is_hotkey_pressed(MovConv.mod_settings.hotkey)
 
     if state ~= MovConv.enabled then
         if state then
@@ -615,9 +618,11 @@ local function try_hook_needed_funcs()
 end
 
 local function init_mod(context)
+    MovConv.mod_settingss = LOAD_GLOBAL_MOD_SETTINGS("MovementConvenience", MovConv.mod_settings)
     kUtil.add_on_tick_handler(check_mov_conv_status)
     kUtil.add_on_render_handler(render_mov_conv)
     kUtil.task_scheduler.add(try_hook_needed_funcs, 1000)
+    SAVE_GLOBAL_MOD_SETTINGS("MovementConvenience", MovConv.mod_settings)
 end
 
 EventHandler.register_event("menu", "init", "MovementConvenience_init", init_mod)

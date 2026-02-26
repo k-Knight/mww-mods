@@ -111,29 +111,29 @@ local function try_find_client_spellcastingsystem()
                     local internal = extension.internal
                     local ws = internal._waiting_spell
                     local ws_name = ws.name
-                
+
                     if ws_name then
                         local spells = internal.spells
                         local spells_data = internal.spells_data
-                
+
                         spells[#spells + 1] = ws.name
                         spells_data[#spells_data + 1] = ws.data
-                
+
                         local spell_table = ClientSpells[ws_name]
-                
+
                         if spell_table.on_cast then
                             local spell_context = spell_context
-                
+
                             spell_context.caster = unit
                             spell_context.internal = internal
                             spell_context.magick = nil
                             spell_context.element_queue = nil
                             spell_context.state = extension.state
                             spell_context.target = nil
-                
+
                             spell_table.on_cast(ws.data, spell_context)
                         end
-                
+
                         ws.name = nil
                         ws.data = nil
                     end
@@ -213,7 +213,6 @@ local function try_find_client_spellcastingsystem()
                             internal.channel_duration = channel_dur
 
                             local ws = internal._waiting_spell
-
                             if ws then
                                 local ws_name = ws.name
                                 local ws_data = ws.data
@@ -290,14 +289,16 @@ local function try_find_client_spellcastingsystem()
                                     else
                                         local is_not_fwd = input.spell_type ~= "forward"
                                         local spells = internal.spells
-                
+
                                         for k = 1, #spells do
                                             local spell = spells[k]
-                
-                                            if is_not_fwd and spell == "Projectile" then
+                                            local is_beam = spell == "Beam"
+                                            local is_proj = spell == "Projectile"
+
+                                            if is_not_fwd and (is_proj or is_beam) then
                                                 dont_cast = true
                                                 break
-                                            elseif (not is_not_fwd) and spell == "Beam" then
+                                            elseif (not is_not_fwd) and is_beam then
                                                 dont_cast = true
                                                 break
                                             end
@@ -347,7 +348,7 @@ local function try_find_client_spellcastingsystem()
                             end
 
                             if cancelled_all_spell_heuristic then
-                                k_log("[SpellBufferFix] called all heuristic triggered, clearing input ...")
+                                k_log("[SpellBufferFix] cancel all heuristic triggered, clearing input ...")
                                 local ws = internal._waiting_spell
 
                                 if ws then
@@ -365,10 +366,10 @@ local function try_find_client_spellcastingsystem()
 
                             if input.spell_type ~= "" then
                                 internal.last_spell = input.spell_type
-    
+
                                 k_log("[SpellBufferFix] calling _handle_spellcast with :: " .. tostring(input.spell_type))
                                 self:_handle_spellcast(unit, input, internal, state)
-    
+
                                 input.spell_type = ""
                                 input.elements = nil
                             end
@@ -402,6 +403,43 @@ local function try_find_client_spellcastingsystem()
                         until true
                     end
                 end
+            end
+        until true
+
+        repeat
+            if not pdNetworkTransportArena or pdNetworkTransportArena._old_send_cast_spell then
+                break
+            end
+
+            k_log("[SpellBufferFix] overriding dNetworkTransportArena:send_cast_spell() !!!")
+            pdNetworkTransportArena._old_send_cast_spell = pdNetworkTransportArena.send_cast_spell
+            pdNetworkTransportArena.send_cast_spell = function(self, unit, cast_type, magick, element_queue, target, magick_target_position, target_position, random_seed)
+                k_log("delaying old pdNetworkTransportArena._old_send_cast_spell()")
+                local _target_position = nil
+                if target_position then
+                    _target_position = Vector3Aux.box({}, target_position)
+                end
+    
+                local _magick_target_position = nil
+                if _magick_target_position then
+                    _magick_target_position = {}
+                    for k, v in pairs(magick_target_position) do
+                        _magick_target_position[k] = v
+                    end
+                end
+
+                local _element_queue = nil
+                if element_queue then
+                    _element_queue = {}
+                    for k, v in pairs(element_queue) do
+                        _element_queue[k] = v
+                    end
+                end
+    
+                kUtil.task_scheduler.add(function()
+                    k_log("  executing old pdNetworkTransportArena._old_send_cast_spell() !!")
+                    pdNetworkTransportArena._old_send_cast_spell(self, unit, cast_type, magick, _element_queue, target, _magick_target_position, _target_position and Vector3Aux.unbox(_target_position) or nil, random_seed)
+                end, 25)
             end
         until true
     end)

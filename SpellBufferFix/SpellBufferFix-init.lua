@@ -1,6 +1,9 @@
 local InputController = require("scripts/input_controller")
 local EventHandler = SE.event_handler
 
+_G.SBF_LOCAL = {}
+_G.SBF_WET_CAST_UNITS = {}
+
 local function try_find_client_spellcastingsystem()
     local status, err = pcall(function()
         repeat
@@ -40,10 +43,7 @@ local function try_find_client_spellcastingsystem()
                     break
                 end
 
-                k_log("[SpellBufferFix] overriding ClientSpellCastingSystem.update_spellcast_units() !!!")
-                ClientSpellCastingSystem._old_update_spellcast_units = ClientSpellCastingSystem.update_spellcast_units
-
-                local ClientSpells = {
+                SBF_LOCAL.ClientSpells = {
                     Aoe = ClientSpells_Aoe,
                     Beam = ClientSpells_Beam,
                     Lightning = Spells_Lightning,
@@ -59,11 +59,11 @@ local function try_find_client_spellcastingsystem()
                     Barrier = ClientSpells_Barrier
                 }
 
-                local ESF = SpellSettings.element_slowdown_factor
+                SBF_LOCAL.ESF = SpellSettings.element_slowdown_factor
 
-                local TEMP_CANCEL_DAMAGE_INFO_TABLE = {}
+                SBF_LOCAL.TEMP_CANCEL_DAMAGE_INFO_TABLE = {}
 
-                local function get_spell_multiplier(unit, spell, spell_data, player_variable_manager)
+                function SBF_LOCAL.get_spell_multiplier(unit, spell, spell_data, player_variable_manager)
                     local spell_element_mul = SpellSettings.spell_element_influence_multiplier[spell] or 1
                     local is_table = type(spell_element_mul) == "table"
 
@@ -83,14 +83,14 @@ local function try_find_client_spellcastingsystem()
                                     end
 
                                     if type(element_multiplier) == "table" then
-                                        multiplier = multiplier - element_multiplier[magnitude] * ESF * affinity_multiplier
+                                        multiplier = multiplier - element_multiplier[magnitude] * SBF_LOCAL.ESF * affinity_multiplier
                                     else
-                                        multiplier = multiplier - element_multiplier * magnitude * ESF * affinity_multiplier
+                                        multiplier = multiplier - element_multiplier * magnitude * SBF_LOCAL.ESF * affinity_multiplier
                                     end
                                 end
                             end
                         else
-                            multiplier = multiplier - spell_element_mul * spell_data.num_elements * ESF
+                            multiplier = multiplier - spell_element_mul * spell_data.num_elements * SBF_LOCAL.ESF
                         end
 
                         return multiplier
@@ -99,15 +99,35 @@ local function try_find_client_spellcastingsystem()
                     return nil
                 end
 
-                local function revert_element_speed_multiplier(u, spell, spell_data, player_variable_manager)
-                    local multiplier = get_spell_multiplier(u, spell, spell_data, player_variable_manager)
+                function SBF_LOCAL.revert_element_speed_multiplier(u, spell, spell_data, player_variable_manager)
+                    local multiplier = SBF_LOCAL.get_spell_multiplier(u, spell, spell_data, player_variable_manager)
 
                     if multiplier and spell_data.speed_multiplier_id then
                         EntityAux.revert_speed_multiplier(u, spell_data.speed_multiplier_id, "spellcast")
                     end
                 end
 
-                local function on_cast_spell(unit, extension, spell_context)
+                function SBF_LOCAL.add_element_speed_multiplier(u, spell, spell_data, player_variable_manager)
+                    local multiplier = SBF_LOCAL.get_spell_multiplier(u, spell, spell_data, player_variable_manager)
+
+                    if multiplier then
+                        spell_data.speed_multiplier_id = EntityAux.add_speed_multiplier(u, multiplier, "spellcast")
+                    end
+                end
+
+                function SBF_LOCAL._get_element_precedence(element_set, num_elements)
+                    if element_set.shield > 0 then
+                        return "shield"
+                    elseif element_set.earth > 0 or element_set.ice > 0 then
+                        return "solid"
+                    elseif element_set.life > 0 or element_set.arcane > 0 then
+                        return "channel"
+                    end
+
+                    return "other"
+                end
+
+                function SBF_LOCAL.on_cast_spell(unit, extension, spell_context)
                     local internal = extension.internal
                     local ws = internal._waiting_spell
                     local ws_name = ws.name
@@ -119,7 +139,7 @@ local function try_find_client_spellcastingsystem()
                         spells[#spells + 1] = ws.name
                         spells_data[#spells_data + 1] = ws.data
 
-                        local spell_table = ClientSpells[ws_name]
+                        local spell_table = SBF_LOCAL.ClientSpells[ws_name]
 
                         if spell_table.on_cast then
                             local spell_context = spell_context
@@ -139,8 +159,11 @@ local function try_find_client_spellcastingsystem()
                     end
                 end
 
+                k_log("[SpellBufferFix] overriding ClientSpellCastingSystem.update_spellcast_units() !!!")
+                ClientSpellCastingSystem._old_update_spellcast_units = ClientSpellCastingSystem.update_spellcast_units
+
                 ClientSpellCastingSystem.update_spellcast_units = function(self, entities, entities_n, spell_update_context, dt)
-                    local SpellTypes = ClientSpells
+                    local SpellTypes = SBF_LOCAL.ClientSpells
 
                     for n = 1, entities_n do
                         repeat
@@ -223,10 +246,10 @@ local function try_find_client_spellcastingsystem()
                                     ws.waiting_time = waiting_time
 
                                     if waiting_time < 0 then
-                                        k_log("[SpellBufferFix] calling on_cast_spell !!")
-                                        on_cast_spell(unit, extension, self.spell_context)
+                                        k_log("[SpellBufferFix] calling SBF_LOCAL.on_cast_spell !!")
+                                        SBF_LOCAL.on_cast_spell(unit, extension, self.spell_context)
                                     else
-                                        local spell_table = ClientSpells[ws_name]
+                                        local spell_table = SBF_LOCAL.ClientSpells[ws_name]
 
                                         if spell_table.waiting_spell_update then
                                             local keep = spell_table.waiting_spell_update(ws_data, spell_update_context)
@@ -234,7 +257,7 @@ local function try_find_client_spellcastingsystem()
                                             if not keep then
                                                 k_log("[SpellBufferFix] triggering player_spell_cast_cancel #1 for :: " .. tostring(ws_name))
                                                 self.event_delegate:trigger2("player_spell_cast_cancel", unit, ws_name, self.spell_context.player_variable_manager)
-                                                revert_element_speed_multiplier(unit, ws_name, ws_data)
+                                                SBF_LOCAL.revert_element_speed_multiplier(unit, ws_name, ws_data)
 
                                                 ws.name = nil
                                                 ws.data = nil
@@ -263,7 +286,7 @@ local function try_find_client_spellcastingsystem()
                                     else
                                         k_log("[SpellBufferFix] triggering player_spell_cast_cancel #2 for :: " .. tostring(spell))
                                         self.event_delegate:trigger2("player_spell_cast_cancel", unit, spell, self.spell_context.player_variable_manager)
-                                        revert_element_speed_multiplier(unit, spell, data, self.spell_context.player_variable_manager)
+                                        SBF_LOCAL.revert_element_speed_multiplier(unit, spell, data, self.spell_context.player_variable_manager)
                                     end
                                 end
                             end
@@ -391,9 +414,9 @@ local function try_find_client_spellcastingsystem()
                                         local damage_info_extension = EntityAux.extension(weapon, "damage_info")
 
                                         if damage_info_extension then
-                                            TEMP_CANCEL_DAMAGE_INFO_TABLE[1] = weapon
+                                            SBF_LOCAL.TEMP_CANCEL_DAMAGE_INFO_TABLE[1] = weapon
 
-                                            EntityAux.set_input_by_extension(damage_info_extension, "cancel_damage", TEMP_CANCEL_DAMAGE_INFO_TABLE)
+                                            EntityAux.set_input_by_extension(damage_info_extension, "cancel_damage", SBF_LOCAL.TEMP_CANCEL_DAMAGE_INFO_TABLE)
                                         end
                                     end
                                 end
@@ -403,6 +426,270 @@ local function try_find_client_spellcastingsystem()
                         until true
                     end
                 end
+            end
+        until true
+
+        repeat
+            if not ClientSpellCastingSystem or ClientSpellCastingSystem._old__handle_spellcast then
+                break
+            end
+
+            k_log("[SpellBufferFix] overriding ClientSpellCastingSystem._handle_spellcast() !!")
+            ClientSpellCastingSystem._old__handle_spellcast = ClientSpellCastingSystem._handle_spellcast
+            ClientSpellCastingSystem._handle_spellcast = function(self, unit, input, internal, state, target)
+                local spell_context = self.spell_context
+
+                if input.spell_type == "self" then
+                    local new_spell_type
+                    local status_state = EntityAux.extension(unit, "status").state
+                    local statuses = status_state.status
+                    local elements = input.elements
+                    local num_elements = input.num_elements
+
+                    if elements.fire > 0 and (statuses.chilled or statuses.wet) then
+                        if elements.fire + elements.life == num_elements then
+                            new_spell_type = "self"
+                        end
+                    elseif statuses.burning and (elements.water > 0 or elements.cold > 0) and (elements.water + elements.life == num_elements or elements.cold + elements.life == num_elements) then
+                        new_spell_type = "self"
+                    end
+
+                    if not new_spell_type then
+                        if elements.life > 0 and elements.lightning == 0 then
+                            new_spell_type = "self"
+                        elseif elements.shield > 0 then
+                            if num_elements == 1 then
+                                new_spell_type = "area"
+                            else
+                                new_spell_type = "self"
+                            end
+                        elseif num_elements > 0 then
+                            new_spell_type = "area"
+                        end
+                    end
+
+                    input.spell_type = new_spell_type
+                end
+
+                local spell_result = input.spell_type == "magick" and "magick" or SBF_LOCAL._get_element_precedence(input.elements, input.num_elements)
+
+                if input.num_elements == 0 and input.spell_type ~= "weapon" and input.spell_type ~= "magick" then
+                    cat_printf_blue("spellcast", "Tried to cast a spell with no elements.")
+
+                    return
+                end
+
+                internal.channel_duration = 0
+                spell_context.input = input
+                spell_context.melee_chain = input.melee_chain or 0
+                spell_context.result = spell_result
+                spell_context.elements = input.elements
+                spell_context.caster = unit
+                spell_context.num_elements = input.num_elements
+                spell_context.internal = internal
+                spell_context.magick = input.magick
+                spell_context.element_queue = input.element_queue
+                spell_context.state = state
+                spell_context.target = target or EntityAux.state(unit, "character").cursor_intersect_unit
+                spell_context.magick_activate_position = input.magick_activate_position
+                spell_context.random_seed = input.random_seed or math.floor(math.random() * 255)
+
+                local spell_type = input.spell_type
+                local magick = input.magick
+                local element_queue = input.element_queue
+                local num_elements = input.num_elements
+
+                input.spell_type = nil
+                input.magick = nil
+                input.element_queue = nil
+                input.num_elements = nil
+                input.elements = nil
+
+                local spell_name = SpellTypes[spell_type](spell_context)
+
+                if not spell_name then
+                    cat_printf_blue("spellcast", "Tried to cast a spell that had no result. This is likely due to frame-delay in reaction on element queue from input Num Elements: %d, Spell Type %s, Elements: %s", num_elements, spell_type, table.concat(element_queue, " "))
+
+                    return
+                end
+
+                local SPELLS = SBF_LOCAL.ClientSpells
+
+                assert(SPELLS[spell_name], "No such spell named %s", spell_name)
+
+                local health_ext = EntityAux.extension(unit, "health")
+
+                if self.is_gamemode_running and health_ext and health_ext.internal and health_ext.internal.invulnerable_time then
+                    health_ext.internal.invulnerable_time = 0
+                end
+
+                for y = 1, #internal.spells_data do
+                    local spells = internal.spells
+                    local spell = spells[y]
+
+                    if spell == "Spray" then
+                        local spell_data = internal.spells_data[y]
+
+                        spell_data.duration = 0
+                    end
+                end
+
+                cat_printf_blue("freen", "[handle_spellcast] Client -> %s", spell_name)
+
+                local spell_is_magick = spell_name == "Magick"
+
+                if spell_is_magick then
+                    local spells_data = internal.spells_data
+
+                    for i = 1, #spells_data do
+                        local spell_data = spells_data[i]
+
+                        if spell_data.magick_type == magick then
+                            local spells = internal.spells
+                            local spell = spells[i]
+                            local spell_update_context = self.spell_update_context
+
+                            spell_update_context.dt = 0
+                            spell_update_context.caster = unit
+                            spell_update_context.target = nil
+
+                            SPELLS[spell].on_cancel(spell_data, spell_update_context)
+                            self.event_delegate:trigger2("player_spell_cast_cancel", unit, spell)
+                            SBF_LOCAL.revert_element_speed_multiplier(unit, spell, spell_data, self.spell_context.player_variable_manager)
+
+                            spells[i] = spells[#spells]
+                            spells[#spells] = nil
+                            spells_data[i] = spells_data[#spells_data]
+                            spells_data[#spells_data] = nil
+
+                            break
+                        end
+                    end
+                elseif spell_context.elements.lightning > 0 and spell_name ~= "SelfShield" then
+                    local status_state = EntityAux.state(unit, "status").status
+
+                    if status_state.wet then
+                        if pdNetworkServerUnit.owning_peer_is_self(unit) then
+                            k_log("[SpellBufferFix] _handle_spellcast about to send_cast_spell WHEN WET !!!")
+                            SBF_WET_CAST_UNITS[unit] = os.clock()
+                            self.network_transport:send_cast_spell(unit, spell_type, magick, element_queue, nil, input.magick_activate_position, Vector3(0, 0, 0), spell_context.random_seed)
+                        end
+
+                        return
+                    end
+                end
+
+                local spell_data, waiting_time = SPELLS[spell_name].init(spell_context, spell_type)
+                local skip_waiting
+                local waiting_time_type = type(waiting_time)
+
+                if waiting_time_type == "boolean" then
+                    skip_waiting = waiting_time
+                    waiting_time = nil
+                end
+
+                if spell_data then
+                    spell_data.element_queue = element_queue
+                    spell_data.elements = spell_context.elements
+                    spell_data.num_elements = num_elements
+
+                    SBF_LOCAL.add_element_speed_multiplier(unit, spell_name, spell_data, self.spell_context.player_variable_manager)
+                end
+
+                local character_state = EntityAux.state(unit, "character")
+
+                if pdNetworkServerUnit.owning_peer_is_self(unit) then
+                    local target = character_state.cursor_intersect_unit
+                    local unit_pos = Unit.local_position(unit, 0)
+                    local activate_pos = Vector3(0, 0, 0)
+
+                    if input.magick_activate_position then
+                        activate_pos = Vector3Aux.unbox(input.magick_activate_position)
+                    end
+
+                    local dir = Vector3.normalize(activate_pos - unit_pos)
+                    local length = 12
+
+                    if spell_data.length_max then
+                        length = spell_data.length_max + spell_data.length_min
+                    end
+
+                    local target_position = unit_pos + dir * length
+
+                    k_log("[SpellBufferFix] _handle_spellcast about to send_cast_spell normally !!!")
+                    self.network_transport:send_cast_spell(unit, spell_type, magick, element_queue, target, input.magick_activate_position, target_position, spell_context.random_seed)
+                end
+
+                if not skip_waiting then
+                    if internal._waiting_spell.name then
+                        k_log("[SpellBufferFix] _handle_spellcast about to spells on_cancel for :: " .. tostring(internal._waiting_spell.name))
+                        SPELLS[internal._waiting_spell.name].on_cancel(internal._waiting_spell.data, spell_context)
+                        SBF_LOCAL.revert_element_speed_multiplier(unit, internal._waiting_spell.name, internal._waiting_spell.data, self.spell_context.player_variable_manager)
+                    end
+
+                    internal._waiting_spell.name = spell_name
+                    internal._waiting_spell.data = spell_data
+                    internal._waiting_spell.waiting_time = waiting_time
+                else
+                    local spells = internal.spells
+                    local spells_data = internal.spells_data
+                    local spell_table = SPELLS[spell_name]
+
+                    if spell_table.on_cast then
+                        k_log("[SpellBufferFix] _handle_spellcast about to spells on_cast for :: " .. tostring(spell_name))
+                        spell_table.on_cast(spell_data, spell_context)
+                    end
+
+                    spells[#spells + 1] = spell_name
+
+                    assert(spell_data, "Error: Received no spell_data")
+
+                    spells_data[#spells_data + 1] = spell_data
+
+                    assert(#spells == #spells_data, "Error: wrong amounts of spell/spelldata.")
+                end
+            end
+        until true
+
+        repeat
+            if not CharacterStateBase or CharacterStateBase._my_old_init then
+                break
+            end
+
+            k_log("[SpellBufferFix] overriding CharacterStateBase.init() !!!")
+            CharacterStateBase._my_old_init = CharacterStateBase.init
+            CharacterStateBase.init = function(self, context)
+                k_log("[SpellBufferFix] in CharacterStateBase.init() !!!")
+
+                k_log("[SpellBufferFix] overriding CharacterStateBase.update() !!!")
+                kUtil.task_scheduler.add(function()
+                    if not self._my_old_update then
+                        self._my_old_update = self.update
+                        self.update = function(self, context)
+                            local input_data = context.input_data
+                            local unit = context.unit
+                            local time = os.clock()
+                            local zap_time = SBF_WET_CAST_UNITS[unit] or 0
+
+                            if input_data and (time - zap_time) < 0.1 then
+                                k_log("[SpellBufferFix] i should get zapped !!!")
+
+                                input_data.wait_for_rmb_release = true
+                                input_data.cast_spell = false
+                                SBF_WET_CAST_UNITS[unit] = nil
+
+                                if input_data.iq_data then
+                                    input_data.iq_data.last_input = nil
+                                    input_data.iq_data.last_time = nil
+                                end
+                            end
+
+                            return self._my_old_update(self, context)
+                        end
+                    end
+                end, 100)
+
+                return CharacterStateBase._my_old_init(self, context)
             end
         until true
 
@@ -419,7 +706,7 @@ local function try_find_client_spellcastingsystem()
                 if target_position then
                     _target_position = Vector3Aux.box({}, target_position)
                 end
-    
+
                 local _magick_target_position = nil
                 if _magick_target_position then
                     _magick_target_position = {}
@@ -435,11 +722,11 @@ local function try_find_client_spellcastingsystem()
                         _element_queue[k] = v
                     end
                 end
-    
+
                 kUtil.task_scheduler.add(function()
                     k_log("  executing old pdNetworkTransportArena._old_send_cast_spell() !!")
                     pdNetworkTransportArena._old_send_cast_spell(self, unit, cast_type, magick, _element_queue, target, _magick_target_position, _target_position and Vector3Aux.unbox(_target_position) or nil, random_seed)
-                end, 25)
+                end, 10)
             end
         until true
     end)

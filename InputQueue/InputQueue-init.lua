@@ -1,8 +1,6 @@
 local InputController = require("scripts/input_controller")
 local EventHandler = SE.event_handler
 
-_G.IQ_UnitDict = {}
-
 local function try_find_spell_wheel_system()
     repeat
         if not CharacterStateBase or CharacterStateBase._old_init then
@@ -24,26 +22,28 @@ local function try_find_spell_wheel_system()
                         local input = nil
                         local os_time = os.clock()
 
-                        if not input_data.wait_for_rmb_release and input_data.cast_spell and input_data.cast_spell > 0 and internal.previous_cursor ~= "magick" and internal.current_cursor ~= "magick" then
-                            input = internal.current_cursor == "default" and "forward" or internal.current_cursor
-                        elseif not input_data.wait_for_mbb_release and input_data.cast_self > 0 then
-                            input = "self"
-                        end
-
-                        if not input_data.iq_data then
-                            input_data.iq_data = {}
-                        end
-
-                        if input then
-                            repeat
-                                if input_data.iq_data.last_input == "forward" and input == "weapon" then
-                                    break
-                                end
-
-                                k_log("[InputQueue] detected mistimed player input :: " .. tostring(input))
-                                input_data.iq_data.last_input = input
-                                input_data.iq_data.last_time = os_time
-                            until true
+                        if input_data then
+                            if not input_data.wait_for_rmb_release and input_data.cast_spell and input_data.cast_spell > 0 and internal.previous_cursor ~= "magick" and internal.current_cursor ~= "magick" then
+                                input = internal.current_cursor == "default" and "forward" or internal.current_cursor
+                            elseif not input_data.wait_for_mbb_release and input_data.cast_self > 0 then
+                                input = "self"
+                            end
+    
+                            if not input_data.iq_data then
+                                input_data.iq_data = {}
+                            end
+    
+                            if input then
+                                repeat
+                                    if input_data.iq_data.last_input == "forward" and input == "weapon" then
+                                        break
+                                    end
+    
+                                    k_log("[InputQueue] detected mistimed player input :: " .. tostring(input))
+                                    input_data.iq_data.last_input = input
+                                    input_data.iq_data.last_time = os_time
+                                until true
+                            end
                         end
 
                         return self._old_update(self, context)

@@ -5,7 +5,7 @@ _G.MovConv = {
     bg_tex = "hud_element_arcane",
     fg_tex = "hud_element_arcane",
     mod_settings = {
-        hotkey = {"mouse_forward"}
+        hotkey = { "mouse_forward" }
     }
 }
 
@@ -14,9 +14,9 @@ local render_mov_conv = function()
         return
     end
 
-    local sz = MovConv.screen_scale / 8
-    local x = MovConv.orig_x - (sz / 2)
-    local y = MovConv.orig_y - (sz / 2)
+    local sz = MovConv.ui_size
+    local x = MovConv.draw_x - (sz / 2)
+    local y = MovConv.draw_y - (sz / 2)
 
     Gui.bitmap(
         _G.ui.ui_renderer.gui,
@@ -26,9 +26,9 @@ local render_mov_conv = function()
         Color(96, 0, 0, 0)
     )
 
-    sz = MovConv.screen_scale / 65
-    x = MovConv.orig_x - (sz / 2)
-    y = MovConv.orig_y - (sz / 2)
+    sz = sz * 0.2
+    x = MovConv.draw_x - (sz / 2)
+    y = MovConv.draw_y - (sz / 2)
 
     Gui.bitmap(
         _G.ui.ui_renderer.gui,
@@ -50,6 +50,17 @@ local check_mov_conv_status = function()
 
             local raw_w, raw_h = Application.resolution()
             MovConv.screen_scale = math.sqrt(raw_w * raw_w + raw_h * raw_h)
+            MovConv.ui_size = MovConv.screen_scale / 16
+
+            local min_x = (MovConv.ui_size / 2) + 1
+            local min_y = min_x
+            local max_x = raw_w - min_x
+            local max_y = raw_h - min_y
+
+            MovConv.draw_x = MovConv.orig_x < min_x and min_x or (MovConv.orig_x > max_x and max_x or MovConv.orig_x)
+            MovConv.draw_y = MovConv.orig_y < min_y and min_y or (MovConv.orig_y > max_y and max_y or MovConv.orig_y)
+            MovConv.first_pass = true
+            Window.set_cursor_position(Vector2(MovConv.draw_x, MovConv.draw_y))
         elseif MovConv.orig_x and MovConv.orig_y then
             Window.set_cursor_position(Vector2(MovConv.orig_x, MovConv.orig_y))
         end
@@ -245,6 +256,17 @@ local function try_hook_needed_funcs()
                 if self.input_disabled or input.disabled or input.disabled_ui then
                     disable_input_data(input_data)
                 elseif input_data.cursor then
+                    local my_cursor = {}
+
+                    if not movement_convenience then
+                        MovConv.last_cur = {}
+                        MovConv.last_cur[1] = input_data.cursor[1]
+                        MovConv.last_cur[2] = input_data.cursor[2]
+                    else
+                        input_data.cursor[1] = MovConv.last_cur[1]
+                        input_data.cursor[2] = MovConv.last_cur[2]
+                    end
+
                     if failsafe_switch_back then
                         Window.set_cursor(cursors[internal.current_cursor])
                     end
@@ -252,24 +274,33 @@ local function try_hook_needed_funcs()
                     local cursor_delta_x, cursor_delta_y
 
                     if movement_convenience and not hud_gui_intersects then
-                        local cur_cursor = Mouse.axis(Mouse.axis_index("cursor"), Mouse.RAW, 3)
-        
-                        cursor_delta_x = cur_cursor[1] - MovConv.orig_x
-                        cursor_delta_y = cur_cursor[2] - MovConv.orig_y
-        
+                        local cur_cursor
+
+                        if MovConv.first_pass then
+                            MovConv.first_pass = false
+                            cur_cursor = {MovConv.draw_x, MovConv.draw_y}
+                            Window.set_cursor_position(Vector2(MovConv.draw_x, MovConv.draw_y))
+                        else
+                            cur_cursor = Mouse.axis(Mouse.axis_index("cursor"), Mouse.RAW, 3)
+                        end
+
+
+                        cursor_delta_x = cur_cursor[1] - MovConv.draw_x
+                        cursor_delta_y = cur_cursor[2] - MovConv.draw_y
+
                         local dist = math.sqrt(cursor_delta_x * cursor_delta_x + cursor_delta_y * cursor_delta_y)
-                        local max_dist = MovConv.screen_scale / 20
-        
+                        local max_dist = MovConv.screen_scale / 40
+
                         if dist > max_dist then
                             local new_dist = dist / max_dist
                             local new_delta_x = cursor_delta_x / new_dist
                             local new_delta_y = cursor_delta_y / new_dist
-                            Window.set_cursor_position(Vector2(MovConv.orig_x + new_delta_x, MovConv.orig_y + new_delta_y))
+                            Window.set_cursor_position(Vector2(MovConv.draw_x + new_delta_x, MovConv.draw_y + new_delta_y))
                         end
-        
-                        local not_dead_zone = (dist / max_dist) > 0.1
-                        cursor_delta_x = cur_cursor[1] - MovConv.orig_x
-                        cursor_delta_y = cur_cursor[2] - MovConv.orig_y
+
+                        local not_dead_zone = (dist / max_dist) > 0.2
+                        cursor_delta_x = cur_cursor[1] - MovConv.draw_x
+                        cursor_delta_y = cur_cursor[2] - MovConv.draw_y
                         cursor_delta_x = not_dead_zone and cursor_delta_x or 0
                         cursor_delta_y = not_dead_zone and cursor_delta_y or 0
                     end
@@ -299,29 +330,32 @@ local function try_hook_needed_funcs()
                     local ignore_click = hud_gui_intersects or input.ignore_click
                     local activate_position = not ignore_click and intersect_pos
                     local my_force_move = false
+                    local my_force_stop = false
 
                     if intersect_pos and movement_convenience and cursor_delta_x and cursor_delta_y then
-                        local delta_mov, delta_dir = camera:screen_ray(cursor[1] + cursor_delta_x, cursor[2] + cursor_delta_y)
-            
-                        local t2 = Intersect.ray_plane(cam, dir, plane)
-                        if t2 == nil then
-                            t2 = 0
-                        end
-            
-                        local intersect_pos_movement2 = delta_mov + delta_dir * t2
-                        local dir = Vector3.normalize(intersect_pos_movement2 - intersect_pos)
-            
-                        dir.z = 0
-            
-                        if Vector3.length(dir) > 0.3 and unit and Unit.alive(unit) then
-                            intersect_pos = Unit.world_position(unit, 0) + (dir * 100)
-                            my_force_move = true
+                        if cursor_delta_x == 0 or cursor_delta_y == 0 then
+                            my_force_stop = true
+                        else
+                            local base_mov, base_dir = camera:screen_ray(MovConv.draw_x, MovConv.draw_y)
+                            local dest_mov, dest_dir = camera:screen_ray(MovConv.draw_x + cursor_delta_x, MovConv.draw_y + cursor_delta_y)
+
+                            local base_intersect_pos = base_mov + base_dir * t
+                            local dest_intersect_pos = dest_mov + dest_dir * t
+                            local dir = dest_intersect_pos - base_intersect_pos
+
+                            dir.z = 0
+                            dir = Vector3.normalize(dir)
+
+                            if Vector3.length(dir) > 0.3 and unit and Unit.alive(unit) then
+                                intersect_pos = Unit.world_position(unit, 0) + (dir * 100)
+                                my_force_move = true
+                            end
                         end
                     end
 
                     CharacterSystemAux_update_pending_magicks(unit, input, input_data, internal, activate_position, unit_spawner, self.entity_manager, cane_navmeshquery, dt)
 
-                    if input_data.move_stop > 0 or input_data.do_move < 0.5 and internal.loco_ext.state.blocked then
+                    if my_force_stop or input_data.move_stop > 0 or input_data.do_move < 0.5 and internal.loco_ext.state.blocked then
                         internal.move_destination = nil
 
                         if internal.move_to_unit then
@@ -387,6 +421,10 @@ local function try_hook_needed_funcs()
                     local look_plane = Plane.from_point_and_normal(unit_world_position + Vector3.up(), Vector3.up())
                     local look_t = Intersect.ray_plane(cam, dir, look_plane)
 
+                    if movement_convenience then
+                        look_t = nil
+                    end
+
                     if look_t then
                         local look_intersect_pos = cam + dir * look_t
                         local look_aim_dir = unit_world_position - look_intersect_pos
@@ -412,8 +450,6 @@ local function try_hook_needed_funcs()
                             diff[3] = 0
 
                             local normalized_diff = Vector3.normalize(diff)
-                            local old_freen_x, old_freen_y = freen_world_direction[1], freen_world_direction[2]
-
                             freen_world_direction[1], freen_world_direction[2] = normalized_diff[1], normalized_diff[2]
                         end
                     end
@@ -611,6 +647,23 @@ local function try_hook_needed_funcs()
                     end
                 end
             end
+        end
+    until true
+
+    repeat
+        if (not CameraSystem) or CameraSystem._old_update_cursor then
+            break
+        end
+
+        k_log("[MovementConvenience] overriding CameraSystem.update_cursor() !!")
+        CameraSystem._old_update_cursor = CameraSystem.update_cursor
+        CameraSystem.update_cursor = function(self)
+            if MovConv.enabled and MovConv.last_cur and self.input_data and self.input_data.cursor then
+                self.input_data.cursor[1] = MovConv.last_cur[1]
+                self.input_data.cursor[2] = MovConv.last_cur[2]
+            end
+
+            return CameraSystem._old_update_cursor(self)
         end
     until true
 

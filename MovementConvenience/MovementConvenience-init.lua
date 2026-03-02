@@ -256,8 +256,6 @@ local function try_hook_needed_funcs()
                 if self.input_disabled or input.disabled or input.disabled_ui then
                     disable_input_data(input_data)
                 elseif input_data.cursor then
-                    local my_cursor = {}
-
                     if not movement_convenience then
                         MovConv.last_cur = {}
                         MovConv.last_cur[1] = input_data.cursor[1]

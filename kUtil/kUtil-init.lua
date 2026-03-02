@@ -206,6 +206,7 @@ local status, err = pcall(function()
 
     kUtil.on_update_listeners = {}
     kUtil.on_render_listeners = {}
+    kUtil.on_gui_update_handlers = {}
 
     kUtil.add_on_tick_handler = function (callback)
         local listeners = kUtil.on_update_listeners
@@ -214,6 +215,11 @@ local status, err = pcall(function()
 
     kUtil.add_on_render_handler = function (callback)
         local listeners = kUtil.on_render_listeners
+        listeners[#listeners + 1] = callback
+    end
+
+    kUtil.add_on_gui_update_handler = function (callback)
+        local listeners = kUtil.on_gui_update_handlers
         listeners[#listeners + 1] = callback
     end
 
@@ -234,6 +240,16 @@ local status, err = pcall(function()
 
             if not status then
                 k_log("[kUtil] error running kUtil.on_render() :: " .. tostring(err))
+            end
+        end
+    end
+
+    kUtil.on_gui_update = function(self, dt, context)
+        for k, v in pairs(kUtil.on_gui_update_handlers) do
+            local status, err = pcall(v, self, dt, context)
+
+            if not status then
+                k_log("[kUtil] error running kUtil.on_gui_update() :: " .. tostring(err))
             end
         end
     end
@@ -261,6 +277,82 @@ local status, err = pcall(function()
         end
 
         return false
+    end
+
+    kUtil.loop_try_prehook_function = function(parent_table, table_name, func_name, callback)
+        local try_hook_func
+        try_hook_func = function ()
+            local hooked = false
+
+            if parent_table[table_name] and parent_table[table_name][func_name] then
+                k_log("[kUtil] trying to prehook to " .. table_name .. "." .. func_name .. "() ...")
+                local old_name = "_old_" .. func_name
+
+                parent_table[table_name][old_name] = parent_table[table_name][func_name]
+                parent_table[table_name][func_name] = function (...)
+                    callback(...)
+                    return parent_table[table_name][old_name](...)
+                end
+
+                hooked = true
+            end
+
+            if not hooked then
+                kUtil.task_scheduler.add(try_hook_func, 1000)
+            end
+        end
+
+        try_hook_func()
+    end
+
+    kUtil.loop_try_posthook_function = function(parent_table, table_name, func_name, callback)
+        local try_hook_func
+        try_hook_func = function ()
+            local hooked = false
+
+            if parent_table[table_name] and parent_table[table_name][func_name] then
+                k_log("[kUtil] trying to posthook to " .. table_name .. "." .. func_name .. "() ...")
+                local old_name = "_old_" .. func_name
+
+                parent_table[table_name][old_name] = parent_table[table_name][func_name]
+                parent_table[table_name][func_name] = function (...)
+                    local ret = parent_table[table_name][old_name](...)
+                    callback(...)
+
+                    return ret
+                end
+
+                hooked = true
+            end
+
+            if not hooked then
+                kUtil.task_scheduler.add(try_hook_func, 1000)
+            end
+        end
+
+        try_hook_func()
+    end
+
+    kUtil.loop_try_repalce_function = function(parent_table, table_name, func_name, new_function)
+        local try_hook_func
+        try_hook_func = function ()
+            local hooked = false
+
+            if parent_table[table_name] and parent_table[table_name][func_name] then
+                k_log("[kUtil] trying to overwrite to " .. table_name .. "." .. func_name .. "() ...")
+                local old_name = "_old_" .. func_name
+
+                parent_table[table_name][old_name] = parent_table[table_name][func_name]
+                parent_table[table_name][func_name] = new_function
+                hooked = true
+            end
+
+            if not hooked then
+                kUtil.task_scheduler.add(try_hook_func, 1000)
+            end
+        end
+
+        try_hook_func()
     end
 end)
 
@@ -298,6 +390,10 @@ else
             kUtil.on_render()
             return _UIContext._old_render(self)
         end
+
+        kUtil.loop_try_prehook_function(_G, "Gui2DSystem", "update", function(self, dt, context)
+            kUtil.on_gui_update(self, dt, context)
+        end)
 
         kUtil.runtime_init = true
     end

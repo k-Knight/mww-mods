@@ -290,8 +290,13 @@ local status, err = pcall(function()
 
                 parent_table[table_name][old_name] = parent_table[table_name][func_name]
                 parent_table[table_name][func_name] = function (...)
-                    callback(...)
-                    return parent_table[table_name][old_name](...)
+                    local dont_run, ret = callback(...)
+
+                    if dont_run then
+                        return ret
+                    else
+                        return parent_table[table_name][old_name](...)
+                    end
                 end
 
                 hooked = true
@@ -316,10 +321,10 @@ local status, err = pcall(function()
 
                 parent_table[table_name][old_name] = parent_table[table_name][func_name]
                 parent_table[table_name][func_name] = function (...)
-                    local ret = parent_table[table_name][old_name](...)
-                    callback(...)
+                    local ret = {parent_table[table_name][old_name](...)}
+                    callback(..., ret)
 
-                    return ret
+                    return unpack(ret)
                 end
 
                 hooked = true
@@ -361,7 +366,7 @@ if not status then
 else
     --k_log("[kUtil] calling util.alloc_dbg_console() ...")
     --kUtil.alloc_dbg_console()
-    
+
     local mod_inited = false
 
     local function init_mod(context)
@@ -376,7 +381,7 @@ else
         end
 
         k_log("[kUtil] trying to append to _UIContext.update() ...")
-    
+
         _UIContext._old_update = _UIContext.update
         _UIContext.update = function(self, dt)
             kUtil.on_update(dt)
@@ -384,7 +389,7 @@ else
         end
 
         k_log("[kUtil] trying to append to _UIContext.render() ...")
-    
+
         _UIContext._old_render = _UIContext.render
         _UIContext.render = function(self)
             kUtil.on_render()
@@ -397,7 +402,7 @@ else
 
         kUtil.runtime_init = true
     end
-    
+
     EventHandler.register_event("menu", "init", "kUtil_init", init_mod)
 end
 

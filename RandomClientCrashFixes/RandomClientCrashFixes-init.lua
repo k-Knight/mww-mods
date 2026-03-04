@@ -19,15 +19,15 @@ local function init_mod(context)
         "PRESENTING_DUEL_RESULT"
     })
 
-    kUtil.loop_try_prehook_function(_G, "NetworkGameModeDuelClientGame", "on_unit_resurrected", function (self, peer_id, unit)
+    kUtil.loop_try_prehook_function(_G, "NetworkGameModeDuelClientGame", "on_unit_resurrected", function(self, peer_id, unit)
         if not self.timpani_world or (not self.last_end_round_event_id and self.duel_state ~= DuelState.DUEL_UNDER_WAY) then
             k_log("[RandomClientCrashFixes] trying to prevent player duel ressurect crash ...")
             return true, nil
         end
     end)
 
-    kUtil.loop_try_repalce_function(_G, "EntityAux", "add_ability", function (u, ability, arg)
-        local status, err = pcall(function ()
+    kUtil.loop_try_repalce_function(_G, "EntityAux", "add_ability", function(u, ability, arg)
+        local status, err = pcall(function()
             assert(ability)
             arg = arg or "dummy_param"
 
@@ -43,6 +43,24 @@ local function init_mod(context)
 
         if not status then
             k_log("[RandomClientCrashFixes] error in EntityAux.add_ability() :: " .. tostring(err))
+        end
+    end)
+
+    kUtil.loop_try_repalce_function(_G, "EntityAux", "add_effect", function(u, effect_table)
+        local status, err = pcall(function()
+            assert(effect_table.effect_type, "Nil effect provided to add-effect.")
+
+            local input = EntityAux.extension(u, "effect_producer", true).input
+
+            input.dirty_flag = true
+
+            local new_effects = input.new_effects
+
+            new_effects[#new_effects + 1] = effect_table
+        end)
+
+        if not status then
+            k_log("[RandomClientCrashFixes] error in EntityAux.add_effect() :: " .. tostring(err))
         end
     end)
 
@@ -81,7 +99,7 @@ local function init_mod(context)
 
                 if unit_is_alive then
                     local go_id_to_remove = unit_storage:go_id(unit)
-                    local status, err = pcall(function ()
+                    local status, err = pcall(function()
                         cat_printf_info_blue("unit_spawner", "[%s] delete_units : unit [%s] destroyed with go_id [%s], unique_id [%s]", self.identifier_tag, tostring(unit), tostring(go_id_to_remove), tostring(UnitAux.unique_id(unit)))
 
                         if go_id_to_remove then

@@ -29,6 +29,10 @@ _G.CEV_DATA = {
     elem_pos = {}
 }
 
+_G.CEV_SETTINGS = {
+    disable_elemet_queue = true
+}
+
 local draw_cev = function(self, dt, context)
     local scale = self.ui_renderer:get_scaling()
     local camera = CameraProxy:setup(self.game_camera, self.game_camera_unit, self.world)
@@ -70,6 +74,8 @@ local function init_mod(context)
     end
 
     mod_inited = true
+
+    MovConv.mod_settingss = LOAD_GLOBAL_MOD_SETTINGS("ClearerElementView", _G.CEV_SETTINGS)
 
     local element_units = {
         shield = "content/units/effects/elements/shield",
@@ -150,7 +156,7 @@ local function init_mod(context)
     end)
 
     kUtil.loop_try_prehook_function(_G, "Gui2DSystem", "draw_elements", function(...)
-        return true
+        return _G.CEV_SETTINGS.disable_elemet_queue
     end)
 
     kUtil.loop_try_repalce_function(_G, "ElementUnitManager", "update", function(self, dt)
@@ -174,8 +180,6 @@ local function init_mod(context)
             if u then
                 local mov = em[i] + dt * 2 * dir
 
-                mov = mov < 0 and mov + (math.pi * 2) or mov
-                mov = mov > (math.pi * 2) and mov - (math.pi * 2) or mov
                 em[i] = mov
 
                 local x = math.cos(mov)
@@ -185,7 +189,7 @@ local function init_mod(context)
 
                 Unit.set_local_position(u, 0, pos)
 
-                if es[u] then
+                if es[u] and es[u].unit then
                     Unit.set_local_position(es[u].unit, 0, pos)
                 end
 
@@ -202,6 +206,8 @@ local function init_mod(context)
     end)
 
     kUtil.add_on_gui_update_handler(draw_cev)
+
+    SAVE_GLOBAL_MOD_SETTINGS("ClearerElementView",_G.CEV_SETTINGS)
 end
 
 

@@ -244,9 +244,9 @@ local status, err = pcall(function()
         end
     end
 
-    kUtil.on_gui_update = function(self, dt, context)
+    kUtil.on_gui_update = function(self, dt)
         for k, v in pairs(kUtil.on_gui_update_handlers) do
-            local status, err = pcall(v, self, dt, context)
+            local status, err = pcall(v, self, dt)
 
             if not status then
                 k_log("[kUtil] error running kUtil.on_gui_update() :: " .. tostring(err))
@@ -396,8 +396,35 @@ else
             return _UIContext._old_render(self)
         end
 
-        kUtil.loop_try_prehook_function(_G, "Gui2DSystem", "update", function(self, dt, context)
-            kUtil.on_gui_update(self, dt, context)
+        kUtil.loop_try_prehook_function(_G, "GuiManager", "update", function(self, dt)
+            kUtil.on_gui_update(self, dt)
+        end)
+
+        kUtil.loop_try_posthook_function(_G, "EntityManager", "init", function(self, ...)
+            kUtil.entity_manager = self
+        end)
+    
+        kUtil.loop_try_posthook_function(_G, "NetworkUnitStorage", "init", function(self, ...)
+            kUtil.unit_storage = self
+        end)
+    
+        kUtil.loop_try_posthook_function(_G, "pdNetworkUnitSpawner", "init", function(self, ...)
+            kUtil.unit_spawner = self
+        end)
+    
+        kUtil.loop_try_posthook_function(_G, "pdWorldAux", "new_world", function(identifier_name, ...)
+            if identifier_name == "CLIENT_GAME_WORLD" then
+                local count = select('#', ...)
+                local world = select(count, ...)
+                kUtil.game_world = world[1]
+            end
+        end)
+    
+        kUtil.loop_try_prehook_function(_G, "GameStateInGame", "on_exit", function(self, ...)
+            kUtil.entity_manager = nil
+            kUtil.unit_storage = nil
+            kUtil.unit_spawner = nil
+            kUtil.game_world = nil
         end)
 
         kUtil.runtime_init = true

@@ -30,12 +30,13 @@ _G.CEV_DATA = {
 }
 
 _G.CEV_SETTINGS = {
-    disable_elemet_queue = true
+    disable_elemet_queue = true,
+    opacity = 112
 }
 
-local draw_cev = function(self, dt, context)
+local draw_cev = function(self, dt)
     local scale = self.ui_renderer:get_scaling()
-    local camera = CameraProxy:setup(self.game_camera, self.game_camera_unit, self.world)
+    local camera = CameraProxy:setup(self.camera, self.camera_unit, self.world)
     local ui_renderer = self.ui_renderer
     local elem_size = 26
     local elem_offset = elem_size / 2
@@ -109,10 +110,13 @@ local function init_mod(context)
         self.elem_shadow[new_unit] = { type = unit_type, unit = self.unit_spawner:spawn_unit_local(unit_type) }
 
         local em = self.element_movement
-        local val = em[ind - 2] or ((#em / 3) * math.pi * 0.5)
-        val = val + (math.pi * 0.5)
+        local val = math.random() * math.pi * 2
 
-        table.insert(em, ind, val)
+        if ind > 1 then
+            val = em[ind - 1] + (math.pi * 0.5)
+        end
+
+        em[ind] = val
 
         for unit, _ in pairs(self.cev_unit_types) do
             if not (unit and Unit.alive(unit)) then
@@ -155,8 +159,42 @@ local function init_mod(context)
         end
     end)
 
-    kUtil.loop_try_prehook_function(_G, "Gui2DSystem", "draw_elements", function(...)
-        return _G.CEV_SETTINGS.disable_elemet_queue
+    kUtil.loop_try_repalce_function(_G, "Gui2DSystem", "draw_elements", function(self, elements, position)
+        if not _G.CEV_SETTINGS.disable_elemet_queue then
+            math.random()
+        
+            if #elements == 0 then
+                return
+            end
+        
+            local ui_renderer = self.ui_renderer
+            local element_size = Vector2(28, 28)
+            local border_size = Vector2(8, 24)
+            local num_elements = #elements
+            local p = Vector3Aux.copy_with_zoffset(position)
+            local tint = Color(_G.CEV_SETTINGS.opacity, 255, 255, 255)
+        
+            p.x = p.x - 36 - 4
+            p.y = p.y - 45
+        
+            ui_renderer:draw_texture(p, border_size, "hud_element_bar_border_left", tint)
+        
+            p.x = p.x + 72 + 4
+        
+            ui_renderer:draw_texture(p, border_size, "hud_element_bar_border_right", tint)
+        
+            p.x = p.x - 72
+        
+            assert(num_elements < 4, "We have more than 5 elements in gui-2d drawing. That is fubar.")
+        
+            for i = num_elements, 1, -1 do
+                local texture = elementsMapping[elements[i]]
+        
+                ui_renderer:draw_texture(p, element_size, texture, tint)
+        
+                p.x = p.x + 24
+            end
+        end
     end)
 
     kUtil.loop_try_repalce_function(_G, "ElementUnitManager", "update", function(self, dt)

@@ -2,10 +2,30 @@
 #include <stdio.h>
 #include <string.h>
 #include <shlwapi.h>
+#include <stdarg.h>
 
 #pragma comment(lib, "Shlwapi.lib")
+#pragma comment(lib, "User32.lib")
 
 #define PATH_LEN 4096
+
+char log_filepath[PATH_LEN];
+
+void log_to_file(const char *format, ...) {
+    char buffer[PATH_LEN * 2];
+    va_list args;
+
+    va_start(args, format);
+    vsprintf(buffer, format, args);
+    va_end(args);
+
+    FILE *fp = fopen(log_filepath, "a");
+    if (fp != NULL) {
+        setvbuf(fp, NULL, _IONBF, 0); 
+        fprintf(fp, "%s\n", buffer);
+        fclose(fp);
+    }
+}
 
 void escape_quotes_to_buffer(const char* src, char* dest) {
     while (*src) {
@@ -34,7 +54,7 @@ int PrepareConsole(const char* target_cmd) {
         STARTUPINFOA si = { sizeof(si) };
         PROCESS_INFORMATION pi = { 0 };
 
-        printf("[exe_proxy] trying to spawn alacritty ::\n\t%s\n", alacritty_cmd);
+        log_to_file("[exe_proxy] trying to spawn alacritty ::\n\t%s\n", alacritty_cmd);
         if (CreateProcessA(NULL, alacritty_cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
             WaitForSingleObject(pi.hProcess, INFINITE);
             CloseHandle(pi.hProcess);
@@ -42,11 +62,21 @@ int PrepareConsole(const char* target_cmd) {
             return 1;
         }
 
-        printf("[exe_proxy] could not launch :: error %lu\n", GetLastError());
+        log_to_file("[exe_proxy] could not launch :: error %lu\n", GetLastError());
     }
 
     AllocConsole();
     return 0;
+}
+
+void change_path_postfix(const char *src, char *dest, const char *extension, const char *postfix) {
+    strcpy(dest, src);
+
+    char* dot = strrchr(dest, '.');
+    if (dot && _stricmp(dot, extension) == 0)
+        strcpy(dot, postfix);
+    else
+        strcat(dest, postfix);
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
@@ -55,19 +85,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     GetModuleFileNameA(NULL, exePath, sizeof(exePath));
 
-    char* fileName = strrchr(exePath, '\\');
-    if (fileName)
-        fileName++;
-    else
-        fileName = exePath;
-
-    strcpy(targetName, fileName);
-
-    char* dot = strrchr(targetName, '.');
-    if (dot && _stricmp(dot, ".exe") == 0)
-        strcpy(dot, "_orig.exe");
-    else
-        strcat(targetName, "_orig.exe");
+    change_path_postfix(exePath, targetName, ".exe", "_orig.exe");
+    change_path_postfix(exePath, log_filepath, ".exe", ".log");
 
     char* cmdLine = GetCommandLineA();
     char* args = NULL;
@@ -84,7 +103,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         args = "";
 
     _snprintf(exePath, sizeof(exePath), "\"%s\" %s", targetName, args);
-    printf("[exe_proxy] launching executable with args\n\t%s\n", exePath);
+    log_to_file("[exe_proxy] launching executable with args\n\t%s\n", exePath);
 
     if (PrepareConsole(exePath)) {
         return 0;
@@ -122,7 +141,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return (int)exitCode;
     }
 
-    printf("[exe_proxy] could not launch %s (error %lu)\n", targetName, GetLastError());
+    log_to_file("[exe_proxy] could not launch %s (error %lu)\n", targetName, GetLastError());
 
     system("pause"); 
     return 1;

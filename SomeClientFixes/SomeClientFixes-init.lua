@@ -2,6 +2,19 @@
 local InputController = require("scripts/input_controller")
 local EventHandler = SE.event_handler
 
+local try_find_frozen_status_on_enter
+try_find_frozen_status_on_enter = function ()
+    repeat
+        --if not CharacterStateFrozen or CharacterStateFrozen._old_on_enter then
+        --    break
+        --end
+
+        k_log("CharacterStateFrozen :: " .. tostring(CharacterStateFrozen))
+        k_log("CharacterStateFrozen.on_enter :: " .. tostring((CharacterStateFrozen or {}).on_enter))
+    until true
+    kUtil.task_scheduler.add(try_find_frozen_status_on_enter, 1000)
+end
+
 local mod_inited = false
 
 local function init_mod(context)
@@ -10,6 +23,8 @@ local function init_mod(context)
     end
 
     mod_inited = true
+
+    --kUtil.task_scheduler.add(try_find_frozen_status_on_enter, 1000)
 
     local DuelState = table.make_bimap_inplace({
         "WAITING_TO_PRESENT_DUELERS",
@@ -21,7 +36,7 @@ local function init_mod(context)
 
     kUtil.loop_try_prehook_function(_G, "NetworkGameModeDuelClientGame", "on_unit_resurrected", function(self, peer_id, unit)
         if not self.timpani_world or (not self.last_end_round_event_id and self.duel_state ~= DuelState.DUEL_UNDER_WAY) then
-            k_log("[RandomClientCrashFixes] trying to prevent player duel ressurect crash ...")
+            k_log("[SomeClientFixes] trying to prevent player duel ressurect crash ...")
             return true, nil
         end
     end)
@@ -42,7 +57,7 @@ local function init_mod(context)
         end)
 
         if not status then
-            k_log("[RandomClientCrashFixes] error in EntityAux.add_ability() :: " .. tostring(err))
+            k_log("[SomeClientFixes] error in EntityAux.add_ability() :: " .. tostring(err))
         end
     end)
 
@@ -60,7 +75,7 @@ local function init_mod(context)
         end)
 
         if not status then
-            k_log("[RandomClientCrashFixes] error in EntityAux.add_effect() :: " .. tostring(err))
+            k_log("[SomeClientFixes] error in EntityAux.add_effect() :: " .. tostring(err))
         end
     end)
 
@@ -120,7 +135,7 @@ local function init_mod(context)
                     end)
 
                     if not status then
-                        k_log("[RandomClientCrashFixes] error deleting unit (go_id : " .. tostring(go_id_to_remove) .. ") :: " .. tostring(err))
+                        k_log("[SomeClientFixes] error deleting unit (go_id : " .. tostring(go_id_to_remove) .. ") :: " .. tostring(err))
                     end
                 else
                     cat_printf_info_blue("unit_spawner", "[%s] delete_units : unit was already destroyed!", self.identifier_tag)
@@ -140,6 +155,31 @@ local function init_mod(context)
             end
         end
     end)
+
+    kUtil.loop_try_posthook_function(_G, "CharacterStateFrozen", "on_enter", function(self, args)
+        k_log("entered frozen status for unit :: " .. tostring(self._unit))
+        local ext = EntityAux.extension(self._unit, "spellcast", true).input
+
+        if not ext then
+            ext = EntityAux.extension(self._unit, "spellcast_husk", true).input
+        end
+
+        if not ext then
+            k_log("MISSING SPELLCAST EXTENSION for unit :: " .. tostring(self._unit))
+            return
+        end
+
+        local input = ext.input
+        if not input then
+            input = ext
+        end
+
+        _G.k_log_table(input, 1, "    ")
+
+        input.cancel_spell[#(input.cancel_spell) + 1] = "LightningAoe"
+        input.cancel_spell[#(input.cancel_spell) + 1] = "Aoe"
+        input.cancel_spell[#(input.cancel_spell) + 1] = "Shield"
+    end)
 end
 
-EventHandler.register_event("menu", "init", "RandomClientCrashFixes_init", init_mod)
+EventHandler.register_event("menu", "init", "SomeClientFixes_init", init_mod)

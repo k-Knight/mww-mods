@@ -1,16 +1,15 @@
 local InputController = require("scripts/input_controller")
 
-local BetterLodouts = {}
+_G.BTLD_DATA = {}
 
 local VERSION = "2.0"
-local VERSION_WHOLE = "Loadout Mod Version " .. VERSION
-
-ACTIVE_GAME_STATE = "menu"
+local VERSION_WHOLE = "BetterLoadouts Mod Version " .. VERSION
+local ACTIVE_GAME_STATE = "menu"
 
 local string_dash_break = "-----------------------------------------------------------\n"
 
-BetterLodouts.info = {
-    name = "BetterLodouts",
+_G.BTLD_DATA.info = {
+    name = "BetterLoadouts",
     author = "SuperMickyJay and k-Knight",
     description = "Adds the ability to save and load gear loadouts.",
     version = VERSION,
@@ -18,11 +17,11 @@ BetterLodouts.info = {
     last_dt = 0,
 }
 
-BetterLodouts.hidden_settings = {
+_G.BTLD_DATA.hidden_settings = {
     loadouts = {},
 }
 
-BetterLodouts.game_state = {}
+_G.BTLD_DATA.game_state = {}
 
 local function firstToUpper(str)
     return (str:gsub("^%l", string.upper))
@@ -43,7 +42,7 @@ end
 local function save_loadout(slot_index)
     k_log("saving loadout to index :: " .. tostring(slot_index))
     local loadout_info = DEEP_CLONE(GET_GAME_DATA("loadout_info"))
-    local settings = BetterLodouts.hidden_settings
+    local settings = _G.BTLD_DATA.hidden_settings
 
     if (#settings.loadouts) < slot_index then
         for i=1, slot_index do
@@ -59,14 +58,14 @@ local function save_loadout(slot_index)
 
     settings.loadouts[slot_index][1] = loadout_info
 
-    SAVE_GLOBAL_MOD_SETTINGS(BetterLodouts.info.name, settings, true)
+    SAVE_GLOBAL_MOD_SETTINGS(_G.BTLD_DATA.info.name, settings, true)
 end
 
 local function load_loadout(slot_index)
     k_log("applying loadout at index :: " .. tostring(slot_index))
-    BetterLodouts.hidden_settings = LOAD_GLOBAL_MOD_SETTINGS(BetterLodouts.info.name, BetterLodouts.hidden_settings, true)
+    _G.BTLD_DATA.hidden_settings = LOAD_GLOBAL_MOD_SETTINGS(_G.BTLD_DATA.info.name, _G.BTLD_DATA.hidden_settings, true)
 
-    local slot_data = BetterLodouts.hidden_settings.loadouts[slot_index]
+    local slot_data = _G.BTLD_DATA.hidden_settings.loadouts[slot_index]
     if not slot_data or #slot_data == 0 then
         return
     end
@@ -74,10 +73,12 @@ local function load_loadout(slot_index)
     local loadout = slot_data[1]
     local setup = LoadoutSetup_init_from_defaults()
     local gear_string = string_dash_break
-    local persistent_setup = BetterLodouts.game_state.menu_player_loadout and BetterLodouts.game_state.menu_player_loadout.loadout or nil
+    local persistent_setup = _G.BTLD_DATA.game_state.menu_player_loadout and _G.BTLD_DATA.game_state.menu_player_loadout.loadout or nil
 
     for k in pairs(loadout) do
+        k_log("applying loadout [" .. tostring(k) .. "] :: " .. tostring(loadout[k]["equipment_name"]))
         LoadoutSetup.set_equipment(setup, k, loadout[k]["equipment_name"])
+
         if persistent_setup then
             LoadoutSetup.set_equipment(persistent_setup, k, loadout[k]["equipment_name"])
         end
@@ -91,8 +92,14 @@ local function load_loadout(slot_index)
         end
     end
 
-    if BetterLodouts.game_state.menu_player_loadout then
-        MenuPlayerLoadout.update_loadout(BetterLodouts.game_state.menu_player_loadout)
+    if _G.BTLD_DATA.game_state.menu_player_loadout then
+        MenuPlayerLoadout.update_loadout(_G.BTLD_DATA.game_state.menu_player_loadout)
+        if persistent_setup then
+            LoadoutSetup.transmit_to_server(
+                persistent_setup,
+                MenuPlayerLoadout.get_server_peer_id(_G.BTLD_DATA.game_state.menu_player_loadout)
+            )
+        end
     end
 
     for k in pairs(loadout) do
@@ -107,7 +114,7 @@ end
 
 local function random_loadout()
     local setup = LoadoutSetup_init_from_defaults()
-    local persistent_setup = BetterLodouts.game_state.menu_player_loadout and BetterLodouts.game_state.menu_player_loadout.loadout or nil
+    local persistent_setup = _G.BTLD_DATA.game_state.menu_player_loadout and _G.BTLD_DATA.game_state.menu_player_loadout.loadout or nil
     local equipment_types = {
         "robe",
         "staff",
@@ -120,14 +127,21 @@ local function random_loadout()
     for _, type in pairs(equipment_types) do
         LoadoutSetup.set_random_equipment(setup, type, "")
         local equipment_name = setup[type].equipment_name
+        k_log("randomly picked loadout [" .. tostring(type) .. "] :: " .. tostring(equipment_name))
 
         if persistent_setup then
             LoadoutSetup.set_equipment(persistent_setup, type, equipment_name)
         end
     end
 
-    if BetterLodouts.game_state.menu_player_loadout then
-        MenuPlayerLoadout.update_loadout(BetterLodouts.game_state.menu_player_loadout)
+    if _G.BTLD_DATA.game_state.menu_player_loadout then
+        MenuPlayerLoadout.update_loadout(_G.BTLD_DATA.game_state.menu_player_loadout)
+        if persistent_setup then
+            LoadoutSetup.transmit_to_server(
+                persistent_setup,
+                MenuPlayerLoadout.get_server_peer_id(_G.BTLD_DATA.game_state.menu_player_loadout)
+            )
+        end
     end
 end
 
@@ -136,7 +150,7 @@ local function my_new_button_unattached(pos, text, text_offset_x, text_offset_y,
         local tex_pos = postion_conditions.self_reference.properties.texture.pos
         local text_offset_x = postion_conditions.text_offset_x
         local text_offset_y = postion_conditions.text_offset_y
-    
+
         return {
             tex_pos[1] + text_offset_x,
             tex_pos[2] + text_offset_y,
@@ -217,7 +231,7 @@ end
 
 local function create_loadout_select_popup(action_fn, title_prefix, check_existing)
     if check_existing then
-        BetterLodouts.hidden_settings = LOAD_GLOBAL_MOD_SETTINGS(BetterLodouts.info.name, BetterLodouts.hidden_settings, true)
+        _G.BTLD_DATA.hidden_settings = LOAD_GLOBAL_MOD_SETTINGS(_G.BTLD_DATA.info.name, _G.BTLD_DATA.hidden_settings, true)
     end
 
     local z_pos = 700
@@ -244,7 +258,7 @@ local function create_loadout_select_popup(action_fn, title_prefix, check_existi
         local no_data = false
 
         if check_existing then
-            local slot_data = BetterLodouts.hidden_settings.loadouts[i]
+            local slot_data = _G.BTLD_DATA.hidden_settings.loadouts[i]
             no_data = not slot_data or #slot_data == 0
         end
 
@@ -337,22 +351,55 @@ end
 
 local game_functions_hooked = false
 
-BetterLodouts.init = function(self, context)
+local function init_mod(context)
     if not game_functions_hooked then
         kUtil.loop_try_prehook_function(_G, "MenuPlayerLoadout", "update", function(self, ui_renderer, dt, input_data)
-            BetterLodouts.game_state.menu_player_loadout = self
+            _G.BTLD_DATA.game_state.menu_player_loadout = self
+        end)
+
+        kUtil.loop_try_repalce_function(_G, "LoadoutSetup", "sanity_check_loadout", function(setup_map)
+            k_log("DISCARDING LOADOUT SANITY CHECK !!!")
+            return true
+        end)
+
+        kUtil.loop_try_prehook_function(_G, "LobbyLoadoutWorld", "set_loadout", function(self, loadout, player_index)
+            if loadout and LoadoutMapping and loadout[LoadoutMapping.robe_skin] and NetworkLookup.equipments then
+                local new_robe_skin = NetworkLookup.equipments[loadout[LoadoutMapping.robe_skin]]
+                k_log("==================== new robe skin for player #" .. tostring(player_index) .. " :: " .. tostring(new_robe_skin))
+            end
+        end)
+
+        kUtil.loop_try_repalce_function(_G, "InventorySystem", "set_visible" function(self, u)
+            set_unit_and_inventory_visibility(u, true)
+
+            local extension = EntityAux_extension(u, "inventory")
+
+            if not extension then
+                return
+            end
+
+            local loadout = assert(self.game_detail_synchronizer:get_peer_loadout(extension.owner_peer_id))
+            local robe_skin = loadout[LoadoutMapping.robe_skin]
+            local robe = loadout[LoadoutMapping.robe]
+
+            if robe and robe_skin and self.CLIENT then
+                local success = SkinningAux.try_skin_unit(extension.inventory.robe, NetworkLookup.equipments[robe], NetworkLookup.equipments[robe_skin], true, true)
+                k_log("-------------------- unit skinning result [" .. tostring(robe_skin) .. "] :: " .. tostring(success))
+
+                pdUnitAux.update_unit_material_settings(extension.inventory.robe)
+            end
         end)
 
         game_functions_hooked = true
     end
 
-    BetterLodouts.hidden_settings = LOAD_GLOBAL_MOD_SETTINGS(BetterLodouts.info.name, BetterLodouts.hidden_settings, true)
-    SAVE_GLOBAL_MOD_SETTINGS(BetterLodouts.info.name, BetterLodouts.hidden_settings, true)
+    _G.BTLD_DATA.hidden_settings = LOAD_GLOBAL_MOD_SETTINGS(_G.BTLD_DATA.info.name, _G.BTLD_DATA.hidden_settings, true)
+    SAVE_GLOBAL_MOD_SETTINGS(_G.BTLD_DATA.info.name, _G.BTLD_DATA.hidden_settings, true)
 
-    better_loadout_mod_tab = {tab = nil}
+    local better_loadout_mod_tab = {tab = nil}
 
-    better_loadout_mod_tab.tab = UIFunc.new_mod_tab("Loadout Mod", "Loadout Mod", function()
-        local tab_description = BetterLodouts.info .. "\nCreated by " .. BetterLodouts.author
+    better_loadout_mod_tab.tab = UIFunc.new_mod_tab("BetterLoadouts Mod", "BetterLoadouts", function()
+        local tab_description = _G.BTLD_DATA.info .. "\nCreated by " .. _G.BTLD_DATA.author
         UIFunc.add_element_to_tab(better_loadout_mod_tab.tab, UIFunc.new_text_markup(VERSION_WHOLE, {100, GET_SCREEN_SIZE_Y() - 200, 502}, 40, {255, 255, 255, 255}, false, {}))
         UIFunc.add_element_to_tab(better_loadout_mod_tab.tab, UIFunc.new_text_body(tab_description, {100, GET_SCREEN_SIZE_Y() - 250, 502}, 20, 100, 25))
     end)
@@ -374,6 +421,4 @@ BetterLodouts.init = function(self, context)
     end)
 end
 
-SUBSCRIBE_TO_STATE("menu", "init", BetterLodouts.info.name, BetterLodouts.init, BetterLodouts)
-
-return BetterLodouts
+EventHandler.register_event("menu", "init", "BetterLoadouts_init", init_mod)

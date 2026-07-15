@@ -254,6 +254,11 @@ local status, err = pcall(function()
         end
     end
 
+    local function Keyboard_down(k)
+        local btn_index = Keyboard and Keyboard.button_index(k) or nil
+        return btn_index and Keyboard.button(btn_index) > 0 or false
+    end
+
     kUtil.is_hotkey_pressed = function (kbd_hotkey)
         if kbd_hotkey then
             local status = true

@@ -180,6 +180,112 @@ local function init_mod(context)
         input.cancel_spell[#(input.cancel_spell) + 1] = "Aoe"
         input.cancel_spell[#(input.cancel_spell) + 1] = "Shield"
     end)
+
+    local Profiler_start, Profiler_stop = Profiler.start, Profiler.stop
+    local Resolution = _Resolution
+
+    Boot.pre_update_fail_counter = 0
+    k_log("overriding Boot.pre_update() ...")
+    Boot.pre_update = function(self, dt)
+        local success, error = pcall(function ()
+            Profiler_start("lua_pre_update")
+            self.machine:pre_update(dt)
+            Profiler_stop()
+        end)
+
+        if not success then
+            Boot.pre_update_fail_counter = Boot.pre_update_fail_counter + 1
+            k_log(error)
+
+            if Boot.pre_update_fail_counter > 99 then
+                Application.quit()
+            end
+        end
+    end
+
+    Boot.update_fail_counter = 0
+    k_log("overriding Boot.update() ...")
+    Boot.update = function(self, dt)
+        local success, error = pcall(function ()
+            self:pre_update(dt)
+            Profiler_start("lua_update")
+            Profiler_start("package_manager_update")
+            self.package_manager:update(dt)
+            Profiler_stop()
+            self.machine:update(dt)
+
+            if rawget(_G, "ui") then
+                ui:update(dt)
+            end
+
+            if Resolution.is_inited then
+                Resolution.update()
+            end
+
+            Profiler_stop()
+        end)
+
+        if not success then
+            Boot.update_fail_counter = Boot.update_fail_counter + 1
+            k_log(error)
+
+            if Boot.update_fail_counter > 99 then
+                Application.quit()
+            end
+        end
+    end
+
+    Boot.post_update_fail_counter = 0
+    k_log("overriding Boot.post_update() ...")
+    Boot.post_update = function(self, dt)
+        local success, error = pcall(function ()
+            Profiler_start("lua_post_update")
+            self.machine:post_update(dt)
+
+            if rawget(_G, "ui") then
+                ui:post_update(dt)
+            end
+
+            FrameTable.swap_tables()
+            FrameTable.clear_tables()
+            Profiler_stop()
+
+            if self.quit_game and not rawget(_G, "EDITOR_LAUNCH") then
+                Application.quit()
+            end
+        end)
+
+        if not success then
+            Boot.post_update_fail_counter = Boot.post_update_fail_counter + 1
+            k_log(error)
+
+            if Boot.post_update_fail_counter > 99 then
+                Application.quit()
+            end
+        end
+    end
+
+    Boot.render_fail_counter = 0
+    k_log("overriding Boot.render() ...")
+    Boot.render = function(self)
+        local success, error = pcall(function ()
+            self.machine:render()
+
+            if rawget(_G, "ui") then
+                ui:pre_render()
+                ui:render()
+            end
+        end)
+
+        if not success then
+            Boot.render_fail_counter = Boot.render_fail_counter + 1
+            k_log(error)
+
+            if Boot.render_fail_counter > 99 then
+                Application.quit()
+            end
+        end
+    end
 end
 
 EventHandler.register_event("menu", "init", "SomeClientFixes_init", init_mod)

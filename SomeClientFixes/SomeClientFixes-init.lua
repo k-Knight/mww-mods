@@ -156,42 +156,33 @@ local function init_mod(context)
         end
     end)
 
-    kUtil.loop_try_posthook_function(_G, "CharacterStateFrozen", "on_enter", function(self, args)
-        k_log("entered frozen status for unit :: " .. tostring(self._unit))
-        local ext = EntityAux.extension(self._unit, "spellcast", true).input
+    kUtil.loop_try_prehook_function("ClientStatusSystemStatuses", "frozen", "on_start", function(unit, internal, status, network)
+        local ext = EntityAux.extension(unit, "spellcast", true) or EntityAux.extension(unit, "spellcast_husk", true)
 
         if not ext then
-            ext = EntityAux.extension(self._unit, "spellcast_husk", true).input
+            k_log("MISSING SPELLCAST EXTENSION for unit :: " .. tostring(unit))
         end
 
-        if not ext then
-            k_log("MISSING SPELLCAST EXTENSION for unit :: " .. tostring(self._unit))
-            return
+        local input = (ext and ext.input and ext.input.input) or (ext and ext.input) or nil
+
+        if input then
+            --input.cancel_spell[#(input.cancel_spell) + 1] = "LightningAoe"
+            --input.cancel_spell[#(input.cancel_spell) + 1] = "Aoe"
+            input.cancel_spell[#(input.cancel_spell) + 1] = "Shield"
         end
-
-        local input = ext.input
-        if not input then
-            input = ext
-        end
-
-        _G.k_log_table(input, 1, "    ")
-
-        input.cancel_spell[#(input.cancel_spell) + 1] = "LightningAoe"
-        input.cancel_spell[#(input.cancel_spell) + 1] = "Aoe"
-        input.cancel_spell[#(input.cancel_spell) + 1] = "Shield"
     end)
 
     local Profiler_start, Profiler_stop = Profiler.start, Profiler.stop
     local Resolution = _Resolution
 
     Boot.pre_update_fail_counter = 0
-    k_log("overriding Boot.pre_update() ...")
+    k_log("[SomeClientFixes] overriding Boot.pre_update() ...")
     Boot.pre_update = function(self, dt)
-        local success, error = pcall(function ()
+        local success, error = xpcall(function ()
             Profiler_start("lua_pre_update")
             self.machine:pre_update(dt)
             Profiler_stop()
-        end)
+        end, debug.traceback)
 
         if not success then
             Boot.pre_update_fail_counter = Boot.pre_update_fail_counter + 1
@@ -204,9 +195,9 @@ local function init_mod(context)
     end
 
     Boot.update_fail_counter = 0
-    k_log("overriding Boot.update() ...")
+    k_log("[SomeClientFixes] overriding Boot.update() ...")
     Boot.update = function(self, dt)
-        local success, error = pcall(function ()
+        local success, error = xpcall(function ()
             self:pre_update(dt)
             Profiler_start("lua_update")
             Profiler_start("package_manager_update")
@@ -223,7 +214,7 @@ local function init_mod(context)
             end
 
             Profiler_stop()
-        end)
+        end, debug.traceback)
 
         if not success then
             Boot.update_fail_counter = Boot.update_fail_counter + 1
@@ -236,9 +227,9 @@ local function init_mod(context)
     end
 
     Boot.post_update_fail_counter = 0
-    k_log("overriding Boot.post_update() ...")
+    k_log("[SomeClientFixes] overriding Boot.post_update() ...")
     Boot.post_update = function(self, dt)
-        local success, error = pcall(function ()
+        local success, error = xpcall(function ()
             Profiler_start("lua_post_update")
             self.machine:post_update(dt)
 
@@ -253,7 +244,7 @@ local function init_mod(context)
             if self.quit_game and not rawget(_G, "EDITOR_LAUNCH") then
                 Application.quit()
             end
-        end)
+        end, debug.traceback)
 
         if not success then
             Boot.post_update_fail_counter = Boot.post_update_fail_counter + 1
@@ -266,16 +257,16 @@ local function init_mod(context)
     end
 
     Boot.render_fail_counter = 0
-    k_log("overriding Boot.render() ...")
+    k_log("[SomeClientFixes] overriding Boot.render() ...")
     Boot.render = function(self)
-        local success, error = pcall(function ()
+        local success, error = xpcall(function ()
             self.machine:render()
 
             if rawget(_G, "ui") then
                 ui:pre_render()
                 ui:render()
             end
-        end)
+        end, debug.traceback)
 
         if not success then
             Boot.render_fail_counter = Boot.render_fail_counter + 1

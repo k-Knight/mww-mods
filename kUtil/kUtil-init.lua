@@ -285,22 +285,31 @@ local status, err = pcall(function()
     end
 
     kUtil.loop_try_prehook_function = function(parent_table, table_name, func_name, callback)
+        if not parent_table then
+            k_log("[kUtil] error in loop_try_prehook_function() :: parent_table not a table or a table name")
+        end
+
         local try_hook_func
         try_hook_func = function ()
             local hooked = false
+            local actual_parent = parent_table
 
-            if parent_table[table_name] and parent_table[table_name][func_name] then
+            if type(parent_table) == "string" then
+                actual_parent = _G[parent_table]
+            end
+
+            if actual_parent and actual_parent[table_name] and actual_parent[table_name][func_name] then
                 k_log("[kUtil] trying to prehook to " .. table_name .. "." .. func_name .. "() ...")
                 local old_name = "_old_" .. func_name
 
-                parent_table[table_name][old_name] = parent_table[table_name][func_name]
-                parent_table[table_name][func_name] = function (...)
+                actual_parent[table_name][old_name] = actual_parent[table_name][func_name]
+                actual_parent[table_name][func_name] = function (...)
                     local dont_run, ret = callback(...)
 
                     if dont_run then
                         return ret
                     else
-                        return parent_table[table_name][old_name](...)
+                        return actual_parent[table_name][old_name](...)
                     end
                 end
 
@@ -316,17 +325,26 @@ local status, err = pcall(function()
     end
 
     kUtil.loop_try_posthook_function = function(parent_table, table_name, func_name, callback)
+        if not parent_table then
+            k_log("[kUtil] error in loop_try_posthook_function() :: parent_table not a table or a table name")
+        end
+
         local try_hook_func
         try_hook_func = function ()
             local hooked = false
+            local actual_parent = parent_table
 
-            if parent_table[table_name] and parent_table[table_name][func_name] then
+            if type(parent_table) == "string" then
+                actual_parent = _G[parent_table]
+            end
+
+            if actual_parent and actual_parent[table_name] and actual_parent[table_name][func_name] then
                 k_log("[kUtil] trying to posthook to " .. table_name .. "." .. func_name .. "() ...")
                 local old_name = "_old_" .. func_name
 
-                parent_table[table_name][old_name] = parent_table[table_name][func_name]
-                parent_table[table_name][func_name] = function (...)
-                    local ret = {parent_table[table_name][old_name](...)}
+                actual_parent[table_name][old_name] = actual_parent[table_name][func_name]
+                actual_parent[table_name][func_name] = function (...)
+                    local ret = {actual_parent[table_name][old_name](...)}
                     callback(..., ret)
 
                     return unpack(ret)
@@ -344,16 +362,25 @@ local status, err = pcall(function()
     end
 
     kUtil.loop_try_repalce_function = function(parent_table, table_name, func_name, new_function)
+        if not parent_table then
+            k_log("[kUtil] error in loop_try_repalce_function() :: parent_table not a table or a table name")
+        end
+
         local try_hook_func
         try_hook_func = function ()
             local hooked = false
+            local actual_parent = parent_table
 
-            if parent_table[table_name] and parent_table[table_name][func_name] then
+            if type(parent_table) == "string" then
+                actual_parent = _G[parent_table]
+            end
+
+            if actual_parent and actual_parent[table_name] and actual_parent[table_name][func_name] then
                 k_log("[kUtil] trying to overwrite to " .. table_name .. "." .. func_name .. "() ...")
                 local old_name = "_old_" .. func_name
 
-                parent_table[table_name][old_name] = parent_table[table_name][func_name]
-                parent_table[table_name][func_name] = new_function
+                actual_parent[table_name][old_name] = actual_parent[table_name][func_name]
+                actual_parent[table_name][func_name] = new_function
                 hooked = true
             end
 
@@ -363,6 +390,59 @@ local status, err = pcall(function()
         end
 
         try_hook_func()
+    end
+
+    kUtil.loop_try_replace_local_value = function(parent_table, table_name, func_name, local_name, replacement_val)
+        if not parent_table then
+            k_log("[kUtil] error in loop_try_replace_local_value() :: parent_table not a table or a table name")
+        end
+
+        if not debug or not debug.getupvalue or not debug.setupvalue then
+            print("[kUtil] debug library or required upvalue functions are missing !!!")
+            return false
+        end
+
+        local try_override_func
+        try_override_func = function ()
+            local actual_parent = parent_table
+
+            if type(parent_table) == "string" then
+                actual_parent = _G[parent_table]
+            end
+
+            if actual_parent and actual_parent[table_name] and actual_parent[table_name][func_name] then
+                k_log("[kUtil] trying to change local value '" .. local_name .. "' in " .. table_name .. "." .. func_name .. "() ...")
+                local host_function = actual_parent[table_name][func_name]
+
+                if jit and type(jit.off) == "function" then
+                    jit.off(host_function)
+                end
+
+                local index = 1
+                while true do
+                    local name, value = debug.getupvalue(host_function, index)
+
+                    if not name then
+                        break
+                    end
+
+                    if name == local_name then
+                        print("[kUtil] indentified upvalue target local value '" .. local_name .. "', replacing ...")
+                        debug.setupvalue(host_function, index, replacement_val)
+                        return
+                    end
+
+                    index = index + 1
+                end
+
+                print("[kUtil] could not find local value '" .. local_name .. "' in " .. func_name .. "() !!!")
+                return
+            end
+
+            kUtil.task_scheduler.add(try_override_func, 1000)
+        end
+
+        try_override_func()
     end
 end)
 
@@ -408,15 +488,15 @@ else
         kUtil.loop_try_posthook_function(_G, "EntityManager", "init", function(self, ...)
             kUtil.entity_manager = self
         end)
-    
+
         kUtil.loop_try_posthook_function(_G, "NetworkUnitStorage", "init", function(self, ...)
             kUtil.unit_storage = self
         end)
-    
+
         kUtil.loop_try_posthook_function(_G, "pdNetworkUnitSpawner", "init", function(self, ...)
             kUtil.unit_spawner = self
         end)
-    
+
         kUtil.loop_try_posthook_function(_G, "pdWorldAux", "new_world", function(identifier_name, ...)
             if identifier_name == "CLIENT_GAME_WORLD" then
                 local count = select('#', ...)
@@ -424,13 +504,41 @@ else
                 kUtil.game_world = world[1]
             end
         end)
-    
+
         kUtil.loop_try_prehook_function(_G, "GameStateInGame", "on_exit", function(self, ...)
             kUtil.entity_manager = nil
             kUtil.unit_storage = nil
             kUtil.unit_spawner = nil
             kUtil.game_world = nil
         end)
+
+
+        local new_local_extension = function (u, extension_name, assert_on_non_existing)
+            local unit_extensions = _G.G_Entities[u]
+            local extension = unit_extensions and unit_extensions[extension_name]
+
+            if not assert_on_non_existing then
+                return extension
+            end
+
+            if not extension then
+                local fail_text = sprintf("EntityAux.extension(%s, %s) failed!. No extension named(%s)!", tostring(u), extension_name, extension_name)
+                k_log(fail_text)
+            end
+
+            return extension
+        end
+
+        kUtil.loop_try_repalce_function(_G, "EntityAux", "extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "state", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "internal", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "input", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "set_input", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "add_number_input", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "add_number_input_by_extension", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "append_input", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "append_input_by_extension", "local_extension", new_local_extension)
+        kUtil.loop_try_replace_local_value(_G, "EntityAux", "set_table_input", "local_extension", new_local_extension)
 
         kUtil.runtime_init = true
     end

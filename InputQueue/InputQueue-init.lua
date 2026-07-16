@@ -54,6 +54,21 @@ local function try_find_spell_wheel_system()
 
             self.handle_spellwheel_input = function(self, unit, input_data, internal)
                 local sw_ext = internal.spellwheel_ext
+                local element_queue = table.deep_clone(sw_ext and sw_ext.state and sw_ext.state.element_queue and sw_ext.state.element_queue.element_queue or {})
+                local max_elements = (#element_queue) > 2
+                local same_elem_queue = true
+                local prev_element_queue = input_data.iq_data and input_data.iq_data.prev_element_queue or {}
+
+                if (#element_queue) ~= (#prev_element_queue) then
+                    same_elem_queue = false
+                else
+                    for k, v in pairs(element_queue) do
+                        if prev_element_queue[k] ~= v then
+                            same_elem_queue = false
+                            break
+                        end
+                    end
+                end
 
                 if not input_data.wait_for_rmb_release and input_data.cast_spell and input_data.cast_spell > 0 and internal.previous_cursor ~= "magick" and internal.current_cursor ~= "magick" then
                     input_data.spell_cast = internal.current_cursor == "default" and "forward" or internal.current_cursor
@@ -63,14 +78,27 @@ local function try_find_spell_wheel_system()
                     input_data.spell_cast = nil
                 end
 
-                if not input_data.spell_cast and input_data.iq_data then
-                    local time = os.clock()
-                    local last_input_time = input_data.iq_data.last_time or 0
+                if max_elements and same_elem_queue then
+                    input_data.wait_for_rmb_release = false
+                    input_data.wait_for_mbb_release = false
 
-                    if (time - last_input_time) < 0.15 then
-                        input_data.spell_cast = input_data.iq_data.last_input
-                        k_log("[InputQueue] carrying over input :: " .. tostring(input_data.spell_cast))
+                    if not input_data.spell_cast and input_data.iq_data then
+                        local time = os.clock()
+                        local last_input_time = input_data.iq_data.last_time or 0
+    
+                        if (time - last_input_time) < 0.25 then
+                            input_data.spell_cast = input_data.iq_data.last_input
+                            k_log("[InputQueue] carrying over input :: " .. tostring(input_data.spell_cast))
+                        end
                     end
+                end
+
+                if input_data.iq_data then
+                    if not same_elem_queue then
+                        k_log("[InputQueue] elements changed, resetting queue ...")
+                        input_data.iq_data.last_time = 0
+                    end
+                    input_data.iq_data.prev_element_queue = element_queue
                 end
 
                 EntityAux.set_input_by_extension(sw_ext, "input_data", input_data)
@@ -201,8 +229,8 @@ local function try_find_spell_wheel_system()
                         }
 
                         if input_data.iq_data then
-                            k_log("[InputQueue] resetting player input :: " .. tostring(spell_cast))
-                            input_data.iq_data[spell_cast] = 0
+                            k_log("[InputQueue] resetting player input due to :: " .. tostring(spell_cast))
+                            input_data.iq_data.last_time = 0
                         end
 
                         self.event_delegate:trigger2("player_spell_cast", spellcast_input)

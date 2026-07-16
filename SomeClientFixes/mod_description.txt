@@ -1,0 +1,1 @@
+Fixes some different client problems and crashes (hopefully). Made by k-Knight.

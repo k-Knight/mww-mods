@@ -473,12 +473,12 @@ else
             return _UIContext._old_update(self, dt)
         end
 
-        k_log("[kUtil] trying to append to _UIContext.render() ...")
-
-        _UIContext._old_render = _UIContext.render
+        k_log("[kUtil] trying to replace to _UIContext.render() ...")
         _UIContext.render = function(self)
+            self.ui_renderer:pre_render()
+            self.ui_scene:render(self, self.ui_renderer)
             kUtil.on_render()
-            return _UIContext._old_render(self)
+            Application.render_world(self._world, self._camera, self._viewport, self._shading_environment)
         end
 
         kUtil.loop_try_prehook_function(_G, "GuiManager", "update", function(self, dt)

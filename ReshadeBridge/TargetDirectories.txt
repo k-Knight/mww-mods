@@ -1,0 +1,3 @@
+C:/Users/k-Knight/AppData/Roaming/WizardWarsModLoader/DataManager/MyProjects/ReshadeBridge/bridge/.cmake_cache/CMakeFiles/reshade_bridge.dir
+C:/Users/k-Knight/AppData/Roaming/WizardWarsModLoader/DataManager/MyProjects/ReshadeBridge/bridge/.cmake_cache/CMakeFiles/edit_cache.dir
+C:/Users/k-Knight/AppData/Roaming/WizardWarsModLoader/DataManager/MyProjects/ReshadeBridge/bridge/.cmake_cache/CMakeFiles/rebuild_cache.dir

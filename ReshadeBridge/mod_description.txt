@@ -1,0 +1,1 @@
+Mod provides a lua interface for interacting with ReShade. Made by k-Knight.

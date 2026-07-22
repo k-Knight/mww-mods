@@ -3,46 +3,45 @@ local EventHandler = SE.event_handler
 
 _G.ReShadeBridge = {}
 
-local mod_inited = false
-
 local function b64_decode(data)
     local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
     data = string.gsub(data, '[^'..b..'=]', '')
 
-    return (data:gsub('.', function(x)
-        if x == '=' then
-            return ''
-        end
-
+    local bit_string = data:gsub('.', function(x)
+        if x == '=' then return '' end
         local r, f = '', (b:find(x) - 1)
-
         for i = 6, 1, -1 do
             r = r .. (f % 2^i - f % 2^(i-1) > 0 and '1' or '0')
         end
-
         return r
-    end):gsub('%d%d%d%d%d%d%d%d', function(x)
+    end)
+
+    local bytes = {}
+    for x in bit_string:gmatch('%d%d%d%d%d%d%d%d') do
         local n = 0
         for i = 1, 8 do
             n = n + (x:sub(i, i) == '1' and 2^(8-i) or 0)
         end
+        table.insert(bytes, string.char(n))
+    end
 
-        return string.char(n)
-    end))
+    return table.concat(bytes)
 end
 
-local function file_exists(path)
+local function file_exists(path, expected_data)
     local f = io.open(path, "rb")
 
-    if f then f:close()
-        return true
+    if f then 
+        local current_data = f:read("*all")
+        f:close()
+    
+        return current_data == expected_data
     end
 
     return false
 end
 
-local function install_file(filename, b64_string)
-    local binary_data = b64_decode(b64_string)
+local function install_file(filename, binary_data)
     local f, err = io.open(filename, "wb")
 
     if not f then
@@ -70,18 +69,20 @@ local function process_asset_table(base_dir, asset_table)
 
             for filename, b64_str in pairs(value) do
                 local target_path = base_dir .. subfolder .. filename
+                local binary_data = b64_decode(b64_str)
 
-                if not file_exists(target_path) then
-                    if install_file(target_path, b64_str) then
+                if not file_exists(target_path, binary_data) then
+                    if install_file(target_path, binary_data) then
                         changes_made = true
                     end
                 end
             end
         elseif type(key) == "string" and type(value) == "string" then
             local target_path = base_dir .. key
+            local binary_data = b64_decode(value)
 
-            if not file_exists(target_path) then
-                if install_file(target_path, value) then
+            if not file_exists(target_path, binary_data) then
+                if install_file(target_path, binary_data) then
                     changes_made = true
                 end
             end
@@ -90,7 +91,6 @@ local function process_asset_table(base_dir, asset_table)
 
     return changes_made
 end
-
 
 local function show_restart_required_popup(mod_name)
     if _G.BTLD_DATA.simple_text_popup and _G.BTLD_DATA.simple_text_popup.properties then
@@ -152,16 +152,24 @@ local function show_restart_required_popup(mod_name)
     return popup
 end
 
+local mod_inited = false
+
 local function init_mod(context)
     if mod_inited then
         return
     end
+
+    mod_inited = true
 
     local ffi = require("ffi")
 
     ffi.cdef[[
         bool __cdecl IsBridgeReady();
         bool __cdecl SetShaderVariableFloat(const char* effect_name, const char* variable_name, float value);
+        bool __cdecl SetShaderVariableFloat2(const char* effect_name, const char* variable_name, float x, float y);
+        bool __cdecl SetShaderVariableFloat3(const char* effect_name, const char* variable_name, float x, float y, float z);
+        bool __cdecl SetEffectStateAndOrder(const char* effect_name, bool enabled, bool move_to_beginning);
+        bool __cdecl ResetShaderVariable(const char* effect_name, const char* variable_name, bool use_user_preset);
     ]]
 
     local needs_restart = false
@@ -170,9 +178,11 @@ local function init_mod(context)
     local target_bin1 = "./reshade_bridge.addon32"
 
     if success and type(b64_data) == "string" then
-        if not file_exists(target_bin1) then
+        local binary_data = b64_decode(b64_data)
+
+        if not file_exists(target_bin1, binary_data) then
             k_log("[Lua-ReShadeBridge] missing file 'reshade_bridge.addon32', installing ...")
-            if install_file(target_bin1, b64_data) then
+            if install_file(target_bin1, binary_data) then
                 needs_restart = true
             end
         end
@@ -209,6 +219,62 @@ local function init_mod(context)
         return bridge.SetShaderVariableFloat(effect_name, variable_name, value)
     end
 
+    _G.ReShadeBridge.setFloat2 = function(effect_name, variable_name, x, y)
+        if not bridge_ready then
+            k_log("[Lua-ReShadeBridge] is not initialized !!!")
+            return
+        end
+
+        if type(effect_name) ~= "string" or type(variable_name) ~= "string" or type(x) ~= "number" or type(y) ~= "number" then
+            k_log("[Lua-ReShadeBridge] Invalid types passed to setFloat. Expected: string, string, number, number")
+            return
+        end
+
+        return bridge.SetShaderVariableFloat2(effect_name, variable_name, x, y)
+    end
+
+    _G.ReShadeBridge.setFloat3 = function(effect_name, variable_name, x, y, z)
+        if not bridge_ready then
+            k_log("[Lua-ReShadeBridge] is not initialized !!!")
+            return
+        end
+
+        if type(effect_name) ~= "string" or type(variable_name) ~= "string" or type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
+            k_log("[Lua-ReShadeBridge] Invalid types passed to setFloat. Expected: string, string, number, number, number")
+            return
+        end
+
+        return bridge.SetShaderVariableFloat3(effect_name, variable_name, x, y, z)
+    end
+
+    _G.ReShadeBridge.setStateAndOrder = function(effect_name, enabled, move_to_beginning)
+        if not bridge_ready then
+            k_log("[Lua-ReShadeBridge] is not initialized !!!")
+            return false
+        end
+
+        if type(effect_name) ~= "string" or type(enabled) ~= "boolean" or type(move_to_beginning) ~= "boolean" then
+            k_log("[Lua-ReShadeBridge] Invalid types passed to setStateAndOrder. Expected: string, boolean, boolean")
+            return false
+        end
+
+        return bridge.SetEffectStateAndOrder(effect_name, enabled, move_to_beginning)
+    end
+
+    _G.ReShadeBridge.resetVariable = function(effect_name, variable_name, use_user_preset)
+        if not bridge_ready then
+            k_log("[Lua-ReShadeBridge] is not initialized !!!")
+            return false
+        end
+
+        if type(effect_name) ~= "string" or type(variable_name) ~= "string" or type(use_user_preset) ~= "boolean" then
+            k_log("[Lua-ReShadeBridge] Invalid types passed to resetVariable. Expected: string, string, boolean")
+            return false
+        end
+
+        return bridge.ResetShaderVariable(effect_name, variable_name, use_user_preset)
+    end
+
     _G.ReShadeBridge.installAssets = function(mod_name, shaders_table, textures_table)
         local shader_changes = process_asset_table("./reshade-shaders/Shaders/", shaders_table)
         local texture_changes = process_asset_table("./reshade-shaders/Textures/", textures_table)
@@ -241,7 +307,7 @@ local function init_mod(context)
         end
     end, 100)
 
-    mod_inited = true
+    CameraSettings.far_range = 1000
 end
 
 EventHandler.register_event("menu", "init", "ReshadeBridge_init", init_mod)

@@ -1,0 +1,1 @@
+Adds fake volumetric ground fog to the game, relies on ReshadeBridge. Made by k-Knight.

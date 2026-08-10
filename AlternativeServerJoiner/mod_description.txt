@@ -1,0 +1,1 @@
+Alternative login server joiner mechanism, mostly by RaT. Made by RaT and k-Knight.

@@ -2,19 +2,6 @@
 local InputController = require("scripts/input_controller")
 local EventHandler = SE.event_handler
 
-local try_find_frozen_status_on_enter
-try_find_frozen_status_on_enter = function ()
-    repeat
-        --if not CharacterStateFrozen or CharacterStateFrozen._old_on_enter then
-        --    break
-        --end
-
-        k_log("CharacterStateFrozen :: " .. tostring(CharacterStateFrozen))
-        k_log("CharacterStateFrozen.on_enter :: " .. tostring((CharacterStateFrozen or {}).on_enter))
-    until true
-    kUtil.task_scheduler.add(try_find_frozen_status_on_enter, 1000)
-end
-
 local mod_inited = false
 
 local function init_mod(context)
@@ -23,8 +10,6 @@ local function init_mod(context)
     end
 
     mod_inited = true
-
-    --kUtil.task_scheduler.add(try_find_frozen_status_on_enter, 1000)
 
     local DuelState = table.make_bimap_inplace({
         "WAITING_TO_PRESENT_DUELERS",
@@ -188,7 +173,7 @@ local function init_mod(context)
             Boot.pre_update_fail_counter = Boot.pre_update_fail_counter + 1
             k_log(error)
 
-            if Boot.pre_update_fail_counter > 99 then
+            if Boot.pre_update_fail_counter > 9 then
                 Application.quit()
             end
         end
@@ -220,7 +205,7 @@ local function init_mod(context)
             Boot.update_fail_counter = Boot.update_fail_counter + 1
             k_log(error)
 
-            if Boot.update_fail_counter > 99 then
+            if Boot.update_fail_counter > 9 then
                 Application.quit()
             end
         end
@@ -250,7 +235,7 @@ local function init_mod(context)
             Boot.post_update_fail_counter = Boot.post_update_fail_counter + 1
             k_log(error)
 
-            if Boot.post_update_fail_counter > 99 then
+            if Boot.post_update_fail_counter > 9 then
                 Application.quit()
             end
         end
@@ -272,7 +257,7 @@ local function init_mod(context)
             Boot.render_fail_counter = Boot.render_fail_counter + 1
             k_log(error)
 
-            if Boot.render_fail_counter > 99 then
+            if Boot.render_fail_counter > 9 then
                 Application.quit()
             end
         end

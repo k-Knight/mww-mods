@@ -540,9 +540,47 @@ else
         kUtil.loop_try_replace_local_value(_G, "EntityAux", "append_input_by_extension", "local_extension", new_local_extension)
         kUtil.loop_try_replace_local_value(_G, "EntityAux", "set_table_input", "local_extension", new_local_extension)
 
+        local orig_GET_STATE = GET_STATE
+        local orig_SETUP_STATE = SETUP_STATE
+        local orig_REMOVE_STATE = REMOVE_STATE
+        local orig_UPDATE_STATE = UPDATE_STATE
+        local orig_HOOK_GAME_DATA = HOOK_GAME_DATA
+        local orig_GET_GAME_DATA = GET_GAME_DATA
+        local orig_SUBSCRIBE_TO_STATE = SUBSCRIBE_TO_STATE
+
+        local function wrap_function_in_pcall(old_function, parent_table, function_name)
+            parent_table[function_name] = function (...)
+                local status, err = pcall(old_function, ...)
+                if not status then
+                    k_log("[kUtil] ERROR in " .. function_name .. "() :: " .. tostring(err))
+                else
+                    return err
+                end
+            end
+        end
+
+        wrap_function_in_pcall(orig_GET_STATE, _G, "GET_STATE")
+        wrap_function_in_pcall(orig_SETUP_STATE, _G, "SETUP_STATE")
+        wrap_function_in_pcall(orig_REMOVE_STATE, _G, "REMOVE_STATE")
+        wrap_function_in_pcall(orig_UPDATE_STATE, _G, "UPDATE_STATE")
+        wrap_function_in_pcall(orig_HOOK_GAME_DATA, _G, "HOOK_GAME_DATA")
+        wrap_function_in_pcall(orig_GET_GAME_DATA, _G, "GET_GAME_DATA")
+        wrap_function_in_pcall(orig_SUBSCRIBE_TO_STATE, _G, "SUBSCRIBE_TO_STATE")
+
+        SE.event_handler = {
+            get_gamestate = GET_STATE,
+            register_new_event = SETUP_STATE,
+            remove_event = REMOVE_STATE,
+            update_event = UPDATE_STATE,
+            hook_variable = HOOK_GAME_DATA,
+            get_variable = GET_GAME_DATA,
+            register_event = SUBSCRIBE_TO_STATE
+        }
+
         kUtil.runtime_init = true
     end
 
-    EventHandler.register_event("menu", "init", "kUtil_init", init_mod)
+    local UIContext = require_bs("scripts/game/ui2/ui_context")
+    init_mod()
 end
 

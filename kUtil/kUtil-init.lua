@@ -174,7 +174,7 @@ local status, err = pcall(function()
 
         local schedule_count = #schedule
         local time = os.clock()
-        local max_exec = 1 -- (schedule_count > 5 and 3) or (schedule_count > 3 and 2) or 1
+        local max_exec = 3 -- (schedule_count > 5 and 3) or (schedule_count > 3 and 2) or 1
         local exec_count = 0
 
         repeat

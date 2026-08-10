@@ -473,6 +473,11 @@ local function init(context)
     SAVE_GLOBAL_MOD_SETTINGS("BetterMoreBlood", BetterMoreBlood_settings, false)
 end
 
+local function on_ingame_gameover()
+    ingame_players_initialized = false
+end
+
 EventHandler.register_event("menu", "init", "BetterMoreBlood_init", init)
 EventHandler.register_event("ingame", "players_initialized", "BetterMoreBlood_init", on_ingame_players_initialized)
+EventHandler.register_event("ingame", "game_over", "BetterMoreBlood_init", on_ingame_gameover)
 EventHandler.register_event("unit_death", "any", "BetterMoreBlood_init", on_any_unit_death)

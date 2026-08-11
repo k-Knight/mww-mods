@@ -40,6 +40,7 @@ add_library(sdl_gamepad_listener SHARED gamepad_state.hpp gamepad_listener.cpp)
 
 target_include_directories(sdl_gamepad_listener PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../sdl/include")
 target_link_directories(sdl_gamepad_listener PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../sdl/lib/x86")
+target_link_libraries(sdl_gamepad_listener PRIVATE SDL2)
 
 set_target_properties(sdl_gamepad_listener PROPERTIES
     MSVC_RUNTIME_LIBRARY $<IF:$<CONFIG:Release>,MultiThreaded,MultiThreadedDebug>
@@ -48,4 +49,15 @@ set_target_properties(sdl_gamepad_listener PROPERTIES
 target_link_options(sdl_gamepad_listener PRIVATE
     -Wl,/ignore:4099
     -Wl,/SUBSYSTEM:$<IF:$<CONFIG:Release>,WINDOWS,CONSOLE>
+)
+
+add_executable(gamepad_viewer tester.cpp)
+
+set_target_properties(gamepad_viewer PROPERTIES
+    MSVC_RUNTIME_LIBRARY $<IF:$<CONFIG:Release>,MultiThreaded,MultiThreadedDebug>
+)
+
+target_link_options(gamepad_viewer PRIVATE
+    -Wl,/ignore:4099
+    -Wl,/SUBSYSTEM:WINDOWS
 )

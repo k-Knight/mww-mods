@@ -12,7 +12,7 @@
 
 static SDL_GameController *controller = NULL;
 static std::chrono::high_resolution_clock::time_point reinit_time;
-static GamepadState g_internal_gamepad_state = {};
+static gamepad_state_t g_internal_gamepad_state = {};
 
 static std::thread g_update_thread;
 static std::atomic<bool> g_running(false);
@@ -59,29 +59,50 @@ static const std::map<std::string, gamepad_btn_t> name_2_btn = {
     {"y", gamepad_y}
 };
 
+static inline float normalize_axis(int16_t value) {
+    float val = static_cast<float>(value) / 32767.0f;
+
+    if (val < -1.0f)
+        return -1.0f;
+    if (val > 1.0f)
+        return 1.0f;
+
+    return val;
+}
+
 static SDL_GameController *find_controller() {
     int num_joysticks = SDL_NumJoysticks();
+
     if (!num_joysticks) {
         auto cur_time = std::chrono::high_resolution_clock::now();
+
         if (std::chrono::duration_cast<std::chrono::milliseconds>(cur_time - reinit_time).count() > 10000) {
             SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
             SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
             reinit_time = cur_time;
         }
     }
-    for (int i = 0; i < num_joysticks; i++) {
-        if (SDL_IsGameController(i)) return SDL_GameControllerOpen(i);
-    }
+
+    for (int i = 0; i < num_joysticks; i++)
+        if (SDL_IsGameController(i))
+            return SDL_GameControllerOpen(i);
+
     return nullptr;
 }
 
-static void update_gamepad_status(GamepadState &state) {
+static void update_gamepad_status(gamepad_state_t &state) {
+    SDL_GameControllerUpdate();
+
+    if (controller && !SDL_GameControllerGetAttached(controller)) {
+        SDL_GameControllerClose(controller);
+        controller = nullptr;
+        state = {};
+    }
+
     if (!controller)
         controller = find_controller();
     if (!controller)
         return;
-
-    SDL_GameControllerUpdate();
 
     for (int i = 0; i < GAMEPAD_BTN_NUM; i++) {
         gamepad_btn_t btn = static_cast<gamepad_btn_t>(i);
@@ -92,10 +113,10 @@ static void update_gamepad_status(GamepadState &state) {
             state.buttons[btn] = std::fabs((float)SDL_GameControllerGetAxis(controller, btn_2_sdl_axis.at(btn)) / 32767.0f) > 0.05f;
     }
 
-    state.left_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
-    state.left_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
-    state.right_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
-    state.right_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
+    state.left_x = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX));
+    state.left_y = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY));
+    state.right_x = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX));
+    state.right_y = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY));
 }
 
 static void gamepad_update_loop() {
@@ -124,9 +145,8 @@ extern "C" {
 
         g_running = false;
 
-        if (g_update_thread.joinable()) {
+        if (g_update_thread.joinable())
             g_update_thread.join();
-        }
 
         if (controller) {
             SDL_GameControllerClose(controller);
@@ -143,29 +163,28 @@ extern "C" {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         auto it = name_2_btn.find(btn_name);
 
-        if (it != name_2_btn.end()) {
+        if (it != name_2_btn.end())
             return g_internal_gamepad_state.buttons[it->second];
-        }
 
         return false;
     }
 
-    DLL_EXPORT int16_t get_left_axis_x() {
+    DLL_EXPORT float get_left_axis_x() {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         return g_internal_gamepad_state.left_x;
     }
 
-    DLL_EXPORT int16_t get_left_axis_y() {
+    DLL_EXPORT float get_left_axis_y() {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         return g_internal_gamepad_state.left_y;
     }
 
-    DLL_EXPORT int16_t get_right_axis_x() {
+    DLL_EXPORT float get_right_axis_x() {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         return g_internal_gamepad_state.right_x;
     }
 
-    DLL_EXPORT int16_t get_right_axis_y() {
+    DLL_EXPORT float get_right_axis_y() {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         return g_internal_gamepad_state.right_y;
     }

@@ -541,16 +541,13 @@ else
         kUtil.loop_try_replace_local_value(_G, "EntityAux", "set_table_input", "local_extension", new_local_extension)
 
         local orig_GET_STATE = GET_STATE
-        local orig_SETUP_STATE = SETUP_STATE
-        local orig_REMOVE_STATE = REMOVE_STATE
-        local orig_UPDATE_STATE = UPDATE_STATE
         local orig_HOOK_GAME_DATA = HOOK_GAME_DATA
         local orig_GET_GAME_DATA = GET_GAME_DATA
         local orig_SUBSCRIBE_TO_STATE = SUBSCRIBE_TO_STATE
 
         local function wrap_function_in_pcall(old_function, parent_table, function_name)
             parent_table[function_name] = function (...)
-                local status, err = pcall(old_function, ...)
+                local status, err = xpcall(old_function, debug.traceback, ...)
                 if not status then
                     k_log("[kUtil] ERROR in " .. function_name .. "() :: " .. tostring(err))
                 else
@@ -560,12 +557,71 @@ else
         end
 
         wrap_function_in_pcall(orig_GET_STATE, _G, "GET_STATE")
-        wrap_function_in_pcall(orig_SETUP_STATE, _G, "SETUP_STATE")
-        wrap_function_in_pcall(orig_REMOVE_STATE, _G, "REMOVE_STATE")
-        wrap_function_in_pcall(orig_UPDATE_STATE, _G, "UPDATE_STATE")
         wrap_function_in_pcall(orig_HOOK_GAME_DATA, _G, "HOOK_GAME_DATA")
         wrap_function_in_pcall(orig_GET_GAME_DATA, _G, "GET_GAME_DATA")
         wrap_function_in_pcall(orig_SUBSCRIBE_TO_STATE, _G, "SUBSCRIBE_TO_STATE")
+
+        local function propagate_state(state_type, state_func, delta_time)
+            local dt = delta_time or 0
+
+            _G.SUBSCRIBED_EVENTS[state_type] = _G.SUBSCRIBED_EVENTS[state_type] or {}
+            _G.SUBSCRIBED_EVENTS[state_type][state_func] = _G.SUBSCRIBED_EVENTS[state_type][state_func] or {}
+
+            local subsriber_count = 0
+
+            for sub_index, sub_callback in pairs(_G.SUBSCRIBED_EVENTS[state_type][state_func]) do
+                subsriber_count = subsriber_count + 1
+
+                local status, err = xpcall(function ()
+                    if _G.SUBSCRIBED_EVENTS[state_type][sub_index] then
+                        sub_callback(_G.SUBSCRIBED_EVENTS[state_type][sub_index], {
+                            dt = dt,
+                            state_type = state_type,
+                            state = _G.STATES[state_type],
+                            data = _G.STATES[state_type],
+                            self = _G.SUBSCRIBED_EVENTS[state_type][sub_index] or nil
+                        })
+                    else
+                        sub_callback({
+                            dt = dt,
+                            state_type = state_type,
+                            state = _G.STATES[state_type],
+                            data = _G.STATES[state_type]
+                        })
+                    end
+                end, debug.traceback)
+
+                if not status then
+                    k_log("[kUtil] error progagating state to the subscriber :: " .. tostring(err))
+                end
+            end
+        end
+
+        _G.SETUP_STATE = function (state, state_type, event_)
+            local state_func = event_ or "init"
+
+            if state then
+                _G.STATES[state_type or "missing_state"] = state
+            end
+
+            propagate_state(state_type, state_func)
+        end
+
+        _G.REMOVE_STATE = function(state_type, dt)
+            propagate_state(state_type, "exit", dt or 0)
+
+            if state_type == "menu" then
+                _G.STATES.menu = nil
+            end
+        end
+
+        _G.UPDATE_STATE = function (state_type, dt, state)
+            if state then
+                _G.STATES[state_type or "missing_state"] = state
+            end
+
+            propagate_state(state_type, "update", dt)
+        end
 
         SE.event_handler = {
             get_gamestate = GET_STATE,

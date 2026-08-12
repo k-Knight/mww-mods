@@ -18,14 +18,6 @@ try_install_shader = function (callback)
             break
         end
 
-        local shaders_table = {
-            [fx_name] = asset_data.fx_string
-        }
-
-        local textures_table = {
-            ["fognoise.jpg"] = asset_data.texture_string
-        }
-
         local changes_made = ReShadeBridge.installAssets("GroundFog", asset_data.shaders, asset_data.textures)
         if changes_made then
             k_log("[GroundFog] assets installed, waiting for game reboot ...")

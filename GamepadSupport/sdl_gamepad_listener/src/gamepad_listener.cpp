@@ -41,18 +41,18 @@ static const std::map<gamepad_btn_t, SDL_GameControllerAxis> btn_2_sdl_axis = {
 };
 
 static const std::map<std::string, gamepad_btn_t> name_2_btn = {
-    {"d up", gamepad_d_up},
-    {"d down", gamepad_d_down},
-    {"d left", gamepad_d_left},
-    {"d right", gamepad_d_right},
+    {"d_up", gamepad_d_up},
+    {"d_down", gamepad_d_down},
+    {"d_left", gamepad_d_left},
+    {"d_right", gamepad_d_right},
     {"start", gamepad_start},
     {"back", gamepad_back},
-    {"l3", gamepad_left_thumb},
-    {"r3", gamepad_right_thumb},
-    {"l1", gamepad_left_shoulder},
-    {"r1", gamepad_right_shoulder},
-    {"l2", gamepad_left_trigger},
-    {"r2", gamepad_right_trigger},
+    {"left_thumb", gamepad_left_thumb},
+    {"right_thumb", gamepad_right_thumb},
+    {"left_shoulder", gamepad_left_shoulder},
+    {"right_shoulder", gamepad_right_shoulder},
+    {"left_trigger", gamepad_left_trigger},
+    {"right_trigger", gamepad_right_trigger},
     {"a", gamepad_a},
     {"b", gamepad_b},
     {"x", gamepad_x},
@@ -117,6 +117,9 @@ static void update_gamepad_status(gamepad_state_t &state) {
     state.left_y = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY));
     state.right_x = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX));
     state.right_y = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY));
+    
+    state.left_trigger_axis = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT));
+    state.right_trigger_axis = normalize_axis(SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
 }
 
 static void gamepad_update_loop() {
@@ -187,5 +190,15 @@ extern "C" {
     DLL_EXPORT float get_right_axis_y() {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         return g_internal_gamepad_state.right_y;
+    }
+
+    DLL_EXPORT float get_left_trigger_axis() {
+        std::lock_guard<std::mutex> lock(g_state_mutex);
+        return g_internal_gamepad_state.left_trigger_axis;
+    }
+
+    DLL_EXPORT float get_right_trigger_axis() {
+        std::lock_guard<std::mutex> lock(g_state_mutex);
+        return g_internal_gamepad_state.right_trigger_axis;
     }
 }

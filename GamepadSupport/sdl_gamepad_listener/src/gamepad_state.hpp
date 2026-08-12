@@ -35,6 +35,8 @@ struct gamepad_state_t {
     float left_y;
     float right_x;
     float right_y;
+    float left_trigger_axis;
+    float right_trigger_axis;
 };
 
 #endif //SDL_GAMEPAD_STATE

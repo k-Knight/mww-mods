@@ -76,7 +76,7 @@ local function init_mod(context)
 
     mod_inited = true
 
-    MovConv.mod_settingss = LOAD_GLOBAL_MOD_SETTINGS("ClearerElementView", _G.CEV_SETTINGS)
+    _G.CEV_SETTINGS = LOAD_GLOBAL_MOD_SETTINGS("ClearerElementView", _G.CEV_SETTINGS)
 
     local element_units = {
         shield = "content/units/effects/elements/shield",
@@ -162,36 +162,36 @@ local function init_mod(context)
     kUtil.loop_try_repalce_function(_G, "Gui2DSystem", "draw_elements", function(self, elements, position)
         if not _G.CEV_SETTINGS.disable_elemet_queue then
             math.random()
-        
+
             if #elements == 0 then
                 return
             end
-        
+
             local ui_renderer = self.ui_renderer
             local element_size = Vector2(28, 28)
             local border_size = Vector2(8, 24)
             local num_elements = #elements
             local p = Vector3Aux.copy_with_zoffset(position)
             local tint = Color(_G.CEV_SETTINGS.opacity, 255, 255, 255)
-        
+
             p.x = p.x - 36 - 4
             p.y = p.y - 45
-        
+
             ui_renderer:draw_texture(p, border_size, "hud_element_bar_border_left", tint)
-        
+
             p.x = p.x + 72 + 4
-        
+
             ui_renderer:draw_texture(p, border_size, "hud_element_bar_border_right", tint)
-        
+
             p.x = p.x - 72
-        
+
             assert(num_elements < 4, "We have more than 5 elements in gui-2d drawing. That is fubar.")
-        
+
             for i = num_elements, 1, -1 do
                 local texture = elementsMapping[elements[i]]
-        
+
                 ui_renderer:draw_texture(p, element_size, texture, tint)
-        
+
                 p.x = p.x + 24
             end
         end

@@ -11,6 +11,8 @@ local function init_mod(context)
 
     mod_inited = true
 
+    k_log("[SomeClientFixes] starting initialization ...")
+
     local DuelState = table.make_bimap_inplace({
         "WAITING_TO_PRESENT_DUELERS",
         "PRESENTING_DUELERS",
@@ -262,6 +264,40 @@ local function init_mod(context)
             end
         end
     end
+
+    local ffi = require("ffi")
+
+    ffi.cdef[[
+        void* GetCurrentProcess();
+        int TerminateProcess(void* hProcess, unsigned int uExitCode);
+    ]]
+
+    Application.quit = function(...)
+        ffi.C.TerminateProcess(ffi.C.GetCurrentProcess(), 0)
+    end
+
+    local ffi = require("ffi")
+
+    ffi.cdef[[
+        typedef struct _EXCEPTION_POINTERS EXCEPTION_POINTERS;
+
+        typedef long (__stdcall *PVECTORED_EXCEPTION_HANDLER)(EXCEPTION_POINTERS* ExceptionInfo);
+
+        void* AddVectoredExceptionHandler(unsigned long FirstHandler, PVECTORED_EXCEPTION_HANDLER VectoredHandler);
+        void* GetCurrentProcess();
+        int TerminateProcess(void* hProcess, unsigned int uExitCode);
+    ]]
+
+    local function exception_handler(exception_info)
+        ffi.C.TerminateProcess(ffi.C.GetCurrentProcess(), 0)
+        return 0
+    end
+
+    local keep_alive_handler = ffi.cast("PVECTORED_EXCEPTION_HANDLER", exception_handler)
+
+    ffi.C.AddVectoredExceptionHandler(1, keep_alive_handler)
+
+    k_log("[SomeClientFixes] finished initialization ...")
 end
 
 EventHandler.register_event("menu", "init", "SomeClientFixes_init", init_mod)

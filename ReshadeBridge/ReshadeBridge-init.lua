@@ -161,6 +161,8 @@ local function init_mod(context)
 
     mod_inited = true
 
+    k_log("[Lua-ReShadeBridge] starting initalization ...")
+
     local ffi = require("ffi")
 
     ffi.cdef[[
@@ -308,6 +310,8 @@ local function init_mod(context)
     end, 100)
 
     CameraSettings.far_range = 1000
+
+    k_log("[Lua-ReShadeBridge] initalization finished")
 end
 
 EventHandler.register_event("menu", "init", "ReshadeBridge_init", init_mod)

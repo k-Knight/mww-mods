@@ -20,13 +20,15 @@ static get_axis_fn get_left_axis_x = nullptr;
 static get_axis_fn get_left_axis_y = nullptr;
 static get_axis_fn get_right_axis_x = nullptr;
 static get_axis_fn get_right_axis_y = nullptr;
+static get_axis_fn get_left_trigger_axis = nullptr;
+static get_axis_fn get_right_trigger_axis = nullptr;
 
 static HMODULE h_gamepad_dll = NULL;
 
 static const std::vector<std::string> button_names = {
-    "d up", "d down", "d left", "d right",
-    "start", "back", "l3", "r3",
-    "l1", "r1", "l2", "r2",
+    "d_up", "d_down", "d_left", "d_right",
+    "start", "back", "left_thumb", "right_thumb",
+    "left_shoulder", "right_shoulder", "left_trigger", "right_trigger",
     "a", "b", "x", "y"
 };
 
@@ -89,6 +91,8 @@ static bool load_gamepad_dll() {
     RESOLVE_PROC(get_axis_fn, get_left_axis_y, "get_left_axis_y");
     RESOLVE_PROC(get_axis_fn, get_right_axis_x, "get_right_axis_x");
     RESOLVE_PROC(get_axis_fn, get_right_axis_y, "get_right_axis_y");
+    RESOLVE_PROC(get_axis_fn, get_left_trigger_axis, "get_left_trigger_axis");
+    RESOLVE_PROC(get_axis_fn, get_right_trigger_axis, "get_right_trigger_axis");
 
     #undef RESOLVE_PROC
     #undef M_WideStr
@@ -131,7 +135,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT u_msg, WPARAM wp, LPARAM lp) {
                 output_text = L"right axis: x=" + std::to_wstring(get_right_axis_x()) + 
                              L" y=" + std::to_wstring(get_right_axis_y());
                 TextOut(hdc, 20, y_offset, output_text.c_str(), (int)output_text.length());
+                y_offset += 25;
+            }
+
+            if (get_left_trigger_axis && get_right_trigger_axis) {
+                output_text = L"triggers: l2=" + std::to_wstring(get_left_trigger_axis()) + 
+                             L" r2=" + std::to_wstring(get_right_trigger_axis());
+                TextOut(hdc, 20, y_offset, output_text.c_str(), (int)output_text.length());
                 y_offset += 40;
+            } else {
+                y_offset += 15;
             }
 
             output_text = L"--- buttons ---";
@@ -187,7 +200,7 @@ int WINAPI WinMain(HINSTANCE h_inst, HINSTANCE, LPSTR, int n_cmd_show) {
     HWND hwnd = CreateWindowEx(
         0, class_name, L"gamepad viewer",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 350, 500,
+        CW_USEDEFAULT, CW_USEDEFAULT, 350, 530,
         NULL, NULL, h_inst, NULL
     );
 

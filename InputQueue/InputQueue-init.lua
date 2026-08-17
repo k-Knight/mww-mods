@@ -22,7 +22,7 @@ local function try_find_spell_wheel_system()
                         local input = nil
                         local os_time = os.clock()
 
-                        if input_data then
+                        if input_data and internal then
                             if not input_data.wait_for_rmb_release and input_data.cast_spell and input_data.cast_spell > 0 and internal.previous_cursor ~= "magick" and internal.current_cursor ~= "magick" then
                                 input = internal.current_cursor == "default" and "forward" or internal.current_cursor
                             elseif not input_data.wait_for_mbb_release and input_data.cast_self > 0 then

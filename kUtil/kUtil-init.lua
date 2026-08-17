@@ -4,6 +4,8 @@ local EventHandler = SE.event_handler
 local status, err = pcall(function()
     _G.kUtil = {}
 
+    local internal_hook_counter = 0
+
     _G.k_to_str = function(obj)
         local text = tostring(obj)
 
@@ -300,7 +302,8 @@ local status, err = pcall(function()
 
             if actual_parent and actual_parent[table_name] and actual_parent[table_name][func_name] then
                 k_log("[kUtil] trying to prehook to " .. table_name .. "." .. func_name .. "() ...")
-                local old_name = "_old_" .. func_name
+                internal_hook_counter = internal_hook_counter + 1
+                local old_name = "_old_" .. func_name .. "_" .. tostring(internal_hook_counter)
 
                 actual_parent[table_name][old_name] = actual_parent[table_name][func_name]
                 actual_parent[table_name][func_name] = function (...)
@@ -340,7 +343,8 @@ local status, err = pcall(function()
 
             if actual_parent and actual_parent[table_name] and actual_parent[table_name][func_name] then
                 k_log("[kUtil] trying to posthook to " .. table_name .. "." .. func_name .. "() ...")
-                local old_name = "_old_" .. func_name
+                internal_hook_counter = internal_hook_counter + 1
+                local old_name = "_old_" .. func_name .. "_" .. tostring(internal_hook_counter)
 
                 actual_parent[table_name][old_name] = actual_parent[table_name][func_name]
                 actual_parent[table_name][func_name] = function (...)
@@ -377,7 +381,8 @@ local status, err = pcall(function()
 
             if actual_parent and actual_parent[table_name] and actual_parent[table_name][func_name] then
                 k_log("[kUtil] trying to overwrite to " .. table_name .. "." .. func_name .. "() ...")
-                local old_name = "_old_" .. func_name
+                internal_hook_counter = internal_hook_counter + 1
+                local old_name = "_old_" .. func_name .. "_" .. tostring(internal_hook_counter)
 
                 actual_parent[table_name][old_name] = actual_parent[table_name][func_name]
                 actual_parent[table_name][func_name] = new_function

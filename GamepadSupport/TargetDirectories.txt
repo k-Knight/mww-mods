@@ -1,0 +1,4 @@
+C:/Users/k-Knight/AppData/Roaming/WizardWarsModLoader/DataManager/MyProjects/GamepadSupport/sdl_gamepad_listener/.cmake_cache/CMakeFiles/sdl_gamepad_listener.dir
+C:/Users/k-Knight/AppData/Roaming/WizardWarsModLoader/DataManager/MyProjects/GamepadSupport/sdl_gamepad_listener/.cmake_cache/CMakeFiles/gamepad_viewer.dir
+C:/Users/k-Knight/AppData/Roaming/WizardWarsModLoader/DataManager/MyProjects/GamepadSupport/sdl_gamepad_listener/.cmake_cache/CMakeFiles/edit_cache.dir
+C:/Users/k-Knight/AppData/Roaming/WizardWarsModLoader/DataManager/MyProjects/GamepadSupport/sdl_gamepad_listener/.cmake_cache/CMakeFiles/rebuild_cache.dir

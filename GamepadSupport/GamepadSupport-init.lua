@@ -4,17 +4,77 @@ local mod_inited = false
 
 _G.GamepadSupportMod = {
     settings = {
+        ["aiming/spell casting threshold"] = 0.90,
+        ["aiming/spell casting delay (s)"] = 0.05,
+        ["aiming/spell reset ratio"] = 0.90,
+        ["aiming range multiplier"] = 17.5,
+        ["stick deadzone %"] = 5.0,
 
-    },
-    state = {
-        is_gamepad_looking = false,
-        cursor_moved = false,
-        last_cursor_pos = {0, 0}
+        bindings = {
+            buttons = {
+                ["fire"] = {{"A"}},
+                ["lightning"] = {{"B"}},
+                ["earth"] = {{"X"}},
+                ["arcane"] = {{"Y"}},
+
+                ["cold"] = {{"LB", "A"}},
+                ["water"] = {{"LB", "B"}},
+                ["shield"] = {{"LB", "X"}},
+                ["life"] = {{"LB", "Y"}},
+
+                ["magick 1"] = {{"D-Pad Left"}},
+                ["magick 2"] = {{"D-Pad Up"}},
+                ["magick 3"] = {{"D-Pad Right"}},
+                ["magick 4"] = {{"D-Pad Down"}},
+
+                ["self cast"] = {{"RB"}},
+                ["use weapon"] = {{"RT"}},
+                ["twist free"] = {{"LB"}, {"RB"}},
+
+                ["select magick 1"] = {{"LB", "D-Pad Left"}},
+                ["select magick 2"] = {{"LB", "D-Pad Up"}},
+                ["select magick 3"] = {{"LB", "D-Pad Right"}},
+                ["select magick 4"] = {{"LB", "D-Pad Down"}},
+
+                ["select magick forward"] = {{"D-Pad Up"}},
+                ["select magick backward"] = {{"D-Pad Down"}},
+
+                ["emote hotkey"] = {{"RS"}},
+                ["use magick or cast immediately"] = {{"LS"}},
+            },
+
+            axis = {
+                ["cursor"] = "Right Thumb Axis",
+                ["movement"] = "Left Thumb Axis",
+            },
+
+            trigger_axis = {
+                ["aim range multiplier"] = {"Left Trigger Axis"},
+            }
+        },
     }
 }
 
 local function reset_cursor()
     k_log("[GamepadSupport] exiting game, resetting cursor ...")
+    local s_w, s_h = Application.resolution()
+
+    _G.GamepadSupportMod.state = {
+        is_gamepad_looking = false,
+        cursor_moved = false,
+        last_cursor_pos = {0, 0},
+        cur_cursor_pos = {s_w / 2, s_h / 2, 0},
+        holding_weapon = false,
+        in_aiming_treshold = -1,
+        trying_to_channel = false,
+        right_click_pressed = false,
+        casting_new_spell = false,
+        selecting_magick_ui = 0,
+        casting_weapon_attack = false,
+        select_magick_forward = false,
+        select_magick_backward = false,
+        hud_magicks = nil
+    }
 
     if GameSettings and GameSettings.cursors then
         Window.set_cursor(GameSettings.cursors.hud)
@@ -36,7 +96,7 @@ local function init_mod()
 
     GamepadSupportMod.settings = LOAD_GLOBAL_MOD_SETTINGS("GamepadSupport", GamepadSupportMod.settings)
 
-    local success, err = pcall(require, "GamepadSupport/gamepadinput")
+    local success, err = xpcall(require, debug.traceback, "GamepadSupport/gamepadinput")
     if not success then
         k_log("[GamepadSupport] failed to load  GamepadInputManager ::\n" .. tostring(err))
         return
@@ -44,45 +104,69 @@ local function init_mod()
 
     GamepadSupportMod.gamepad_input_manager = GamepadInputManager()
 
-    local success, err = pcall(require, "GamepadSupport/gamepadmapping")
+    local success, err = xpcall(require, debug.traceback, "GamepadSupport/gamepadmapping")
     if not success then
         k_log("[GamepadSupport] failed to load  GamepadMapper ::\n" .. tostring(err))
         return
     end
 
     GamepadSupportMod.gamepad_mapper = GamepadMapper()
-    GamepadSupportMod.gamepad_mapper:bind_key("fire_up", {"a"})
-    GamepadSupportMod.gamepad_mapper:bind_key("fire", {"a"})
-    GamepadSupportMod.gamepad_mapper:bind_key("lightning_up", {"b"})
-    GamepadSupportMod.gamepad_mapper:bind_key("lightning", {"b"})
-    GamepadSupportMod.gamepad_mapper:bind_key("earth_up", {"x"})
-    GamepadSupportMod.gamepad_mapper:bind_key("earth", {"x"})
-    GamepadSupportMod.gamepad_mapper:bind_key("arcane_up", {"y"})
-    GamepadSupportMod.gamepad_mapper:bind_key("arcane", {"y"})
-    GamepadSupportMod.gamepad_mapper:bind_key("cold_up", {"left_trigger", "a"})
-    GamepadSupportMod.gamepad_mapper:bind_key("cold", {"left_trigger", "a"})
-    GamepadSupportMod.gamepad_mapper:bind_key("water_up", {"left_trigger", "b"})
-    GamepadSupportMod.gamepad_mapper:bind_key("water", {"left_trigger", "b"})
-    GamepadSupportMod.gamepad_mapper:bind_key("shield_up", {"left_trigger", "x"})
-    GamepadSupportMod.gamepad_mapper:bind_key("shield", {"left_trigger", "x"})
-    GamepadSupportMod.gamepad_mapper:bind_key("life_up", {"left_trigger", "y"})
-    GamepadSupportMod.gamepad_mapper:bind_key("life", {"left_trigger", "y"})
 
-    GamepadSupportMod.gamepad_mapper:bind_key("magick1_up", {"d_left"})
-    GamepadSupportMod.gamepad_mapper:bind_key("magick1", {"d_left"})
-    GamepadSupportMod.gamepad_mapper:bind_key("magick2_up", {"d_up"})
-    GamepadSupportMod.gamepad_mapper:bind_key("magick2", {"d_up"})
-    GamepadSupportMod.gamepad_mapper:bind_key("magick3_up", {"d_right"})
-    GamepadSupportMod.gamepad_mapper:bind_key("magick3", {"d_right"})
-    GamepadSupportMod.gamepad_mapper:bind_key("magick4_up", {"d_down"})
-    GamepadSupportMod.gamepad_mapper:bind_key("magick4", {"d_down"})
+    local success, err = xpcall(require, debug.traceback, "GamepadSupport/gamepadbinder")
+    if not success then
+        k_log("[GamepadSupport] failed to bind keys ::\n" .. tostring(err))
+        return
+    end
 
-    GamepadSupportMod.gamepad_mapper:bind_key("self_channel", {"right_shoulder"})
-    GamepadSupportMod.gamepad_mapper:bind_key("cast_self", {"right_shoulder"})
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("right_click", function ()
+        GamepadSupportMod.state.right_click_pressed = true
+        GamepadSupportMod.gamepad_mapper.input_sates["right_click"] = false
+        GamepadSupportMod.gamepad_mapper.input_sates["right_click_up"] = false
+    end)
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("right_click_up", function ()
+        GamepadSupportMod.state.right_click_pressed = false
+        GamepadSupportMod.gamepad_mapper.input_sates["right_click"] = false
+        GamepadSupportMod.gamepad_mapper.input_sates["right_click_up"] = false
+    end)
 
-    GamepadSupportMod.gamepad_mapper:bind_key("cursor", "right_thumb_axis")
-    GamepadSupportMod.gamepad_mapper:bind_key("movement", "left_thumb_axis")
-    GamepadSupportMod.gamepad_mapper:bind_key("aim_range_multiplier", "left_trigger_axis")
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("select_magick_forward_up", function ()
+        k_log("select_magick_forward_up !!!!!!!!!!")
+        GamepadSupportMod.state.select_magick_forward = true
+    end)
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("select_magick_backward_up", function ()
+        k_log("select_magick_backward_up !!!!!!!!!!")
+        GamepadSupportMod.state.select_magick_backward = true
+    end)
+
+    local magick_trigger_inputs = {
+        "magick1", "magick2", "magick3", "magick4",
+        "magick1_up", "magick2_up", "magick3_up", "magick4_up"
+    }
+
+    local stop_magick_button_triggers = function()
+        if GamepadSupportMod.state.selecting_magick_ui > 0.5 then
+            for _, input in ipairs(magick_trigger_inputs) do
+                GamepadSupportMod.gamepad_mapper.input_sates[input] = false
+            end
+        end
+    end
+
+    for _, input in ipairs(magick_trigger_inputs) do
+        GamepadSupportMod.gamepad_mapper:add_on_input_handler(input, stop_magick_button_triggers)
+    end
+
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("select_magick1_up", function ()
+        GamepadSupportMod.state.selecting_magick_ui = GamepadSupportMod.state.selecting_magick_ui == 1 and 0 or 1
+    end)
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("select_magick2_up", function ()
+        GamepadSupportMod.state.selecting_magick_ui = GamepadSupportMod.state.selecting_magick_ui == 2 and 0 or 2
+    end)
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("select_magick3_up", function ()
+        GamepadSupportMod.state.selecting_magick_ui = GamepadSupportMod.state.selecting_magick_ui == 3 and 0 or 3
+    end)
+    GamepadSupportMod.gamepad_mapper:add_on_input_handler("select_magick4_up", function ()
+        GamepadSupportMod.state.selecting_magick_ui = GamepadSupportMod.state.selecting_magick_ui == 4 and 0 or 4
+    end)
 
     local success, err = pcall(require, "GamepadSupport/overrides")
     if not success then

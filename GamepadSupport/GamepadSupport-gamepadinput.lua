@@ -39,7 +39,7 @@ if not _G.GamepadInputManager then
         self.input.left_y  = 0.0
         self.input.right_x = 0.0
         self.input.right_y = 0.0
-        
+
         self.input.left_trigger_axis  = 0.0
         self.input.right_trigger_axis = 0.0
 
@@ -57,7 +57,7 @@ if not _G.GamepadInputManager then
         self.input.left_y  = gamepad_lib.get_left_axis_y()
         self.input.right_x = gamepad_lib.get_right_axis_x()
         self.input.right_y = gamepad_lib.get_right_axis_y()
-        
+
         self.input.left_trigger_axis  = gamepad_lib.get_left_trigger_axis()
         self.input.right_trigger_axis = gamepad_lib.get_right_trigger_axis()
     end

@@ -14,7 +14,7 @@ if not _G.GamepadInputManager then
         float get_right_trigger_axis();
     ]]
 
-    local gamepad_lib = ffi.load("sdl_gamepad_listener.dll")
+    local gamepad_lib = ffi.load("./sdl_gamepad_listener.bin")
 
     local BUTTON_NAMES = {
         "d_up", "d_down", "d_left", "d_right",

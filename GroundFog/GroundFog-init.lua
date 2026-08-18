@@ -159,13 +159,13 @@ local function set_main_menu_cloud_settings()
         return false
     end
 
-    res = ReShadeBridge.setFloat2(fx_name, "CloudSpeed", 0.01, -0.03)
+    res = ReShadeBridge.setFloat2(fx_name, "CloudSpeed", -0.03, -0.08)
     if not res then
         k_log("[GroundFog] failed to set CloudSpeed !!!")
         return false
     end
 
-    res = ReShadeBridge.setFloat(fx_name, "MaxBlobDensity", 0.35)
+    res = ReShadeBridge.setFloat(fx_name, "MaxBlobDensity", 0.25)
     if not res then
         k_log("[GroundFog] failed to set MaxBlobDensity !!!")
         return false

@@ -449,6 +449,78 @@ local status, err = pcall(function()
 
         try_override_func()
     end
+
+    local ffi = require("ffi")
+
+    local decode_lut = ffi.new("int8_t[256]")
+    for i = 0, 255 do decode_lut[i] = -1 end
+
+    local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    for i = 1, #b do
+        decode_lut[string.byte(b, i)] = i - 1
+    end
+
+    kUtil.b64_decode = function(data)
+        local len = #data
+        if len == 0 then return "" end
+
+        local src = ffi.cast("const uint8_t*", data)
+
+        local max_out_len = math.floor(len * 3 / 4)
+        local dst = ffi.new("uint8_t[?]", max_out_len)
+
+        local bit_buffer = 0
+        local bit_count = 0
+        local dst_idx = 0
+
+        for i = 0, len - 1 do
+            local char = src[i]
+
+            if char == 61 then break end
+
+            local val = decode_lut[char]
+            if val ~= -1 then
+                bit_buffer = bit.lshift(bit_buffer, 6) + val
+                bit_count = bit_count + 6
+
+                if bit_count >= 8 then
+                    bit_count = bit_count - 8
+                    dst[dst_idx] = bit.band(bit.rshift(bit_buffer, bit_count), 0xFF)
+                    dst_idx = dst_idx + 1
+                end
+            end
+        end
+
+        return ffi.string(dst, dst_idx)
+    end
+
+    kUtil.file_exists = function(path, expected_data)
+        local f = io.open(path, "rb")
+
+        if f then 
+            local current_data = f:read("*all")
+            f:close()
+        
+            return current_data == expected_data
+        end
+
+        return false
+    end
+
+    kUtil.install_file = function(filename, binary_data)
+        local f, err = io.open(filename, "wb")
+
+        if not f then
+            k_log("[Lua-ReShadeBridge] Failed to write file: " .. filename .. ". Error: " .. tostring(err))
+            return false
+        end
+
+        f:write(binary_data)
+        f:close()
+        k_log("[Lua-ReShadeBridge] Successfully installed: " .. filename)
+
+        return true
+    end
 end)
 
 if not status then

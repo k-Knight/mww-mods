@@ -94,6 +94,59 @@ local function init_mod()
         return
     end
 
+    local context = {
+        target_bin = "",
+        b64_data = ""
+    }
+
+    context.b64_data = require("GamepadSupport/sdl2_bin")
+    context.target_bin = "./SDL2.dll"
+
+    if type(context.b64_data) == "string" then
+        local binary_data = kUtil.b64_decode(context.b64_data)
+
+        if not kUtil.file_exists(context.target_bin, binary_data) then
+            k_log("[GamepadSupport] missing file 'SDL2.dll', installing ...")
+            if not kUtil.install_file(context.target_bin, binary_data) then
+                k_log("[GamepadSupport] failed to install 'SDL2.dll' file !!!")
+                return
+            end
+        end
+    end
+
+    context.b64_data = require("GamepadSupport/sdl_gamepad_listener_bin")
+    context.target_bin = "./sdl_gamepad_listener.bin"
+
+    if type(context.b64_data) == "string" then
+        local binary_data = kUtil.b64_decode(context.b64_data)
+
+        if not kUtil.file_exists(context.target_bin, binary_data) then
+            k_log("[GamepadSupport] missing file 'sdl_gamepad_listener.bin', installing ...")
+            if not kUtil.install_file(context.target_bin, binary_data) then
+                k_log("[GamepadSupport] failed to install 'sdl_gamepad_listener.bin' file !!!")
+                return
+            end
+        end
+    end
+
+    context.b64_data = require("GamepadSupport/gamepad_configurator_bin")
+    context.target_bin = "./gamepad_configurator.pyw"
+
+    if type(context.b64_data) == "string" then
+        local binary_data = kUtil.b64_decode(context.b64_data)
+
+        if not kUtil.file_exists(context.target_bin, binary_data) then
+            k_log("[GamepadSupport] missing file 'gamepad_configurator.pyw', installing ...")
+            if not kUtil.install_file(context.target_bin, binary_data) then
+                k_log("[GamepadSupport] failed to install 'gamepad_configurator.pyw' file !!!")
+                return
+            end
+        end
+    end
+
+    context.b64_data = nil
+    context.target_bin = nil
+
     GamepadSupportMod.settings = LOAD_GLOBAL_MOD_SETTINGS("GamepadSupport", GamepadSupportMod.settings)
 
     local success, err = xpcall(require, debug.traceback, "GamepadSupport/gamepadinput")

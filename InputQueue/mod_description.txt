@@ -1,1 +1,0 @@
-Adds an slight "smart" input queue to the game. Made by k-Knight.

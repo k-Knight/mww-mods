@@ -3,59 +3,6 @@ local EventHandler = SE.event_handler
 
 _G.ReShadeBridge = {}
 
-local function b64_decode(data)
-    local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    data = string.gsub(data, '[^'..b..'=]', '')
-
-    local bit_string = data:gsub('.', function(x)
-        if x == '=' then return '' end
-        local r, f = '', (b:find(x) - 1)
-        for i = 6, 1, -1 do
-            r = r .. (f % 2^i - f % 2^(i-1) > 0 and '1' or '0')
-        end
-        return r
-    end)
-
-    local bytes = {}
-    for x in bit_string:gmatch('%d%d%d%d%d%d%d%d') do
-        local n = 0
-        for i = 1, 8 do
-            n = n + (x:sub(i, i) == '1' and 2^(8-i) or 0)
-        end
-        table.insert(bytes, string.char(n))
-    end
-
-    return table.concat(bytes)
-end
-
-local function file_exists(path, expected_data)
-    local f = io.open(path, "rb")
-
-    if f then 
-        local current_data = f:read("*all")
-        f:close()
-    
-        return current_data == expected_data
-    end
-
-    return false
-end
-
-local function install_file(filename, binary_data)
-    local f, err = io.open(filename, "wb")
-
-    if not f then
-        k_log("[Lua-ReShadeBridge] Failed to write file: " .. filename .. ". Error: " .. tostring(err))
-        return false
-    end
-
-    f:write(binary_data)
-    f:close()
-    k_log("[Lua-ReShadeBridge] Successfully installed: " .. filename)
-
-    return true
-end
-
 local function process_asset_table(base_dir, asset_table)
     local changes_made = false
 
@@ -69,20 +16,20 @@ local function process_asset_table(base_dir, asset_table)
 
             for filename, b64_str in pairs(value) do
                 local target_path = base_dir .. subfolder .. filename
-                local binary_data = b64_decode(b64_str)
+                local binary_data = kUtil.b64_decode(b64_str)
 
-                if not file_exists(target_path, binary_data) then
-                    if install_file(target_path, binary_data) then
+                if not kUtil.file_exists(target_path, binary_data) then
+                    if kUtil.install_file(target_path, binary_data) then
                         changes_made = true
                     end
                 end
             end
         elseif type(key) == "string" and type(value) == "string" then
             local target_path = base_dir .. key
-            local binary_data = b64_decode(value)
+            local binary_data = kUtil.b64_decode(value)
 
-            if not file_exists(target_path, binary_data) then
-                if install_file(target_path, binary_data) then
+            if not kUtil.file_exists(target_path, binary_data) then
+                if kUtil.install_file(target_path, binary_data) then
                     changes_made = true
                 end
             end
@@ -180,11 +127,11 @@ local function init_mod(context)
     local target_bin1 = "./reshade_bridge.addon32"
 
     if success and type(b64_data) == "string" then
-        local binary_data = b64_decode(b64_data)
+        local binary_data = kUtil.b64_decode(b64_data)
 
-        if not file_exists(target_bin1, binary_data) then
+        if not kUtil.file_exists(target_bin1, binary_data) then
             k_log("[Lua-ReShadeBridge] missing file 'reshade_bridge.addon32', installing ...")
-            if install_file(target_bin1, binary_data) then
+            if kUtil.install_file(target_bin1, binary_data) then
                 needs_restart = true
             end
         end

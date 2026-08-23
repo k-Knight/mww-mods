@@ -25,7 +25,7 @@ function LoginServerJoinerDirect:init(server_address, network_message_router)
 
 	k_log(string.format("[LoginServerJoinerDirect] joining %s at %q", self.server_type, tostring(server_address)))
 
-	self.lobby_proxy = SteamLobbyProxy(NetworkHandler:join_server(server_address))
+	self.lobby_proxy = LobbyProxyJuggler(server_address, 2)
 end
 
 function LoginServerJoinerDirect:destroy()

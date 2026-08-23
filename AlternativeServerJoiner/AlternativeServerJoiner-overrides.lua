@@ -139,7 +139,71 @@ kUtil.loop_try_repalce_function(_G, "LoginServerHandler", "update", function (se
 end)
 
 kUtil.loop_try_prehook_function(_G, "XMPP", "connect", function (...)
-    k_log("[AlternativeServerJoiner] requested XMPP connection, skipping to avoid lag :/")
+    if  AlternativeServerJoiner.settings.disable_xmpp then
+        k_log("[AlternativeServerJoiner] requested XMPP connection, skipping to avoid lag :/")
+    
+        return true, nil
+    end
+end)
 
-    return true, nil
+
+kUtil.loop_try_repalce_function(_G, "NetworkGameserverJoiner", "join_gameserver", function (self, server_address)
+    assert(self.lobby_proxy == nil)
+    assert(self.state == "nop" or self.state == "failed")
+
+    self.state = "nop"
+    self.server_address = server_address
+
+    if self.BACKEND_TYPE == "STEAM" then
+        self.lobby_proxy = LobbyProxyJuggler(server_address, 5)
+    else
+        self.lobby_proxy = LanLobbyProxy(NetworkHandler:join_lobby(server_address))
+    end
+
+    self.state = "joining_lobby"
+
+    local current_batch_id = ApplicationStorage.get_data_clear("pd", "network_server_joiner", "batch_id") or 0
+
+    ApplicationStorage.set_data("pd", "network_server_joiner", "batch_id", current_batch_id + 1)
+
+    self.handshake_batch_id = current_batch_id
+
+    printf("[NetworkGameserverJoiner] join_gameserver %q with handshake batch_id %d", tostring(server_address), tostring(self.handshake_batch_id))
+end)
+
+kUtil.loop_try_repalce_function(_G, "NetworkGameserverJoiner", "update_joining_lobby", function (self)
+    if not self.lobby_proxy then
+        return
+    end
+
+    local lobby_proxy = self.lobby_proxy
+
+    lobby_proxy:update()
+
+    local is_failed, fail_reason = lobby_proxy:is_failed()
+    local fail_count = self.retry_count or 0
+
+    if lobby_proxy:joined_successfully() then
+        printf("[NetworkGameserverJoiner] successfully joined %s lobby with lobby host [%s]", self.server_type, lobby_proxy.lobby_host)
+        
+        self.state = "in_lobby"
+    elseif is_failed then
+        if fail_count < 3 then
+            self.retry_count = fail_count + 1
+            k_log("[NetworkGameserverJoiner] failed to join, retrying #" .. tostring(self.retry_count) .. " ...")
+
+            lobby_proxy:leave_lobby()
+            self.lobby_proxy = nil
+            
+            kUtil.task_scheduler.add(function ()
+                self.state = "nop"
+                self:join_gameserver(self.server_address)
+            end, 100)
+        end
+        printf("[NetworkGameserverJoiner] failed to join %s lobby with lobby host [%s]. fail_reason [%s]", self.server_type, tostring(lobby_proxy.lobby_host), tostring(lobby_proxy.fail_reason))
+        self:abort()
+
+        self.state = "failed"
+        self.error_code = NetworkLookup.lobby_error_mapping[fail_reason]
+    end
 end)

@@ -2,6 +2,50 @@
 local InputController = require("scripts/input_controller")
 local EventHandler = SE.event_handler
 
+local processed_tables = {Boot, SE.event_handler}
+
+local function wrap_object(obj, name_path)
+    if type(obj) == "table" and type(obj.update) == "function" and not obj._unprotected_update then
+        obj._unprotected_update = obj.update
+
+        obj.update = function(self, ...)
+            local results = { pcall(obj._unprotected_update, self, ...) }
+
+            if not results[1] then
+                k_log("[SomeClientFixes] update failed in '" .. name_path .. "' error :: " .. tostring(results[2]))
+                return
+            end
+
+            return unpack(results, 2, #results)
+        end
+
+        k_log("[SomeClientFixes] successfully wrapped update() in a pcall for :: " .. name_path)
+    end
+end
+
+function scan_and_wrap_updates()
+    for k1, v1 in pairs(_G) do
+        if type(v1) == "table" and k1 ~= "_G" and not processed_tables[v1] then
+            processed_tables[v1] = true
+            pcall(wrap_object, v1, tostring(k1))
+
+            for k2, v2 in pairs(v1) do
+                if type(v2) == "table" and not processed_tables[v2] then
+                    pcall(wrap_object, v2, tostring(k1) .. "." .. tostring(k2))
+                end
+            end
+        end
+    end
+end
+
+local schedule_scan
+schedule_scan = function()
+    scan_and_wrap_updates()
+
+    local next_delay = 1.0 + math.random()
+    kUtil.task_scheduler.add(schedule_scan, next_delay)
+end
+
 local mod_inited = false
 
 local function init_mod(context)
@@ -178,6 +222,8 @@ local function init_mod(context)
             if Boot.pre_update_fail_counter > 9 then
                 Application.quit()
             end
+        else
+            Boot.pre_update_fail_counter = 0
         end
     end
 
@@ -210,6 +256,8 @@ local function init_mod(context)
             if Boot.update_fail_counter > 9 then
                 Application.quit()
             end
+        else
+            Boot.update_fail_counter = 0
         end
     end
 
@@ -240,6 +288,8 @@ local function init_mod(context)
             if Boot.post_update_fail_counter > 9 then
                 Application.quit()
             end
+        else
+            Boot.post_update_fail_counter = 0
         end
     end
 
@@ -262,6 +312,8 @@ local function init_mod(context)
             if Boot.render_fail_counter > 9 then
                 Application.quit()
             end
+        else
+            Boot.render_fail_counter = 0
         end
     end
 
@@ -296,6 +348,8 @@ local function init_mod(context)
     local keep_alive_handler = ffi.cast("PVECTORED_EXCEPTION_HANDLER", exception_handler)
 
     ffi.C.AddVectoredExceptionHandler(1, keep_alive_handler)
+
+    schedule_scan()
 
     k_log("[SomeClientFixes] finished initialization ...")
 end

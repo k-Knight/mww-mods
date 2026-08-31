@@ -26,13 +26,23 @@ kUtil.loop_try_repalce_function(_G, "InputManager", "_send_input", function (sel
 
                 if new_x and new_y then
                     local diff = math.abs(old_x - new_x) + math.abs(old_y - new_y)
+                    local current_time = os.clock()
 
-                    if diff > 50 then
-                        GamepadSupportMod.state.is_gamepad_looking = false
-                        GamepadSupportMod.state.cursor_moved = true
-                        GamepadSupportMod.state.last_cursor_pos = {new_x, new_y}
-                        mousr_cursor_moved = true
+                    if diff > 5 then
+                        if not GamepadSupportMod.state.cur_mov_start_time then
+                            GamepadSupportMod.state.cur_mov_start_time = current_time
+                        end
+
+                        if (current_time - GamepadSupportMod.state.cur_mov_start_time) > 0.25 then
+                            GamepadSupportMod.state.is_gamepad_looking = false
+                            GamepadSupportMod.state.cursor_moved = true
+                            GamepadSupportMod.state.last_cursor_pos = {new_x, new_y}
+                            mousr_cursor_moved = true
+                        else
+                            GamepadSupportMod.state.cursor_moved = false
+                        end
                     else
+                        GamepadSupportMod.state.cur_mov_start_time = nil
                         GamepadSupportMod.state.cursor_moved = false
                     end
                 end
@@ -44,13 +54,21 @@ kUtil.loop_try_repalce_function(_G, "InputManager", "_send_input", function (sel
                     val = 1
                 else
                     if is_cursor then
-                        gamepad_value = GamepadSupportMod.state.cur_cursor_pos
-                        local new_x, new_y = gamepad_value[1], gamepad_value[2]
+                        local new_x, new_y = GamepadSupportMod.state.cur_cursor_pos[1], GamepadSupportMod.state.cur_cursor_pos[2]
+                        gamepad_value = {
+                            new_x,
+                            new_y,
+                            0
+                        }
 
                         GamepadSupportMod.state.last_cursor_pos = {new_x, new_y}
-                    end
 
-                    val = gamepad_value
+                        if GamepadSupportMod.state.is_gamepad_looking then
+                            val = gamepad_value
+                        end
+                    else
+                        val = gamepad_value
+                    end
                 end
             elseif not mousr_cursor_moved and is_cursor then
                 GamepadSupportMod.state.cursor_moved = false
@@ -95,7 +113,9 @@ kUtil.loop_try_posthook_function(_G, "CharacterStateMachine", "init", function (
             k_log("[GamepadSupport] overridng CharacterState[" .. tostring(char_state_name) .. "].set_channeling_state() !!!")
             state._old_set_channeling_state = state.set_channeling_state
             state.set_channeling_state = function(self, value)
-                if GamepadSupportMod.state.holding_weapon then
+                local unit = self._unit
+
+                if GamepadSupportMod.state.holding_weapon and unit and Unit.alive(unit) and pdNetworkServerUnit.owning_peer_is_self(unit) then
                     value = true
                 end
 
@@ -105,9 +125,10 @@ kUtil.loop_try_posthook_function(_G, "CharacterStateMachine", "init", function (
 
         k_log("[GamepadSupport] overridng CharacterState[" .. tostring(char_state_name) .. "].handle_spellwheel_input() !!!")
         state.handle_spellwheel_input = function (self, unit, input_data, internal)
+            local owns_this = unit and Unit.alive(unit) and pdNetworkServerUnit.owning_peer_is_self(unit)
             local sw_ext = internal.spellwheel_ext
-            local holding_weapon = GamepadSupportMod.state.holding_weapon
-            local aiming_spell = GamepadSupportMod.state.trying_to_channel
+            local holding_weapon = owns_this and GamepadSupportMod.state.holding_weapon
+            local aiming_spell = owns_this and GamepadSupportMod.state.trying_to_channel
 
             local state = sw_ext and sw_ext.state
             local queued_elements = state and state.queued_elements or 0
@@ -131,14 +152,17 @@ kUtil.loop_try_posthook_function(_G, "CharacterStateMachine", "init", function (
                     input_data.spell_cast = nil
                 end
             end
+
             EntityAux.set_input_by_extension(sw_ext, "input_data", input_data)
         end
     end
 end)
 
 kUtil.loop_try_prehook_function(_G, "ClientSpellCastingSystem", "_handle_spellcast", function (self, unit, input, internal, state, target)
-    GamepadSupportMod.state.casting_new_spell = true
-    GamepadSupportMod.state.right_click_pressed = false
+    if unit and Unit.alive(unit) and pdNetworkServerUnit.owning_peer_is_self(unit) then
+        GamepadSupportMod.state.casting_new_spell = true
+        GamepadSupportMod.state.right_click_pressed = false
+    end
 end)
 
 local tmp_context
@@ -151,13 +175,10 @@ kUtil.loop_try_posthook_function(_G, "ClientSpells_Weapon", "update", function(d
     local my_context = tmp_context or context
     local caster = my_context.caster or my_context.caster
 
-    if caster and Unit.alive(caster) then
-        local owns_this = pdNetworkServerUnit.owning_peer_is_self(caster)
+    if caster and Unit.alive(caster) and pdNetworkServerUnit.owning_peer_is_self(caster) then
         local state = data.state
 
-        if owns_this then
-            GamepadSupportMod.state.casting_weapon_attack = state == "charge_attacking_waiting_for_end" or state == "chain_attacking_waiting_for_end" or state == "chain_attacking_in_window"
-        end
+        GamepadSupportMod.state.casting_weapon_attack = state == "charge_attacking_waiting_for_end" or state == "chain_attacking_waiting_for_end" or state == "chain_attacking_in_window"
     end
 
     tmp_context = nil
@@ -346,6 +367,7 @@ kUtil.task_scheduler.add(function ()
             local magick_cursor = internal.current_cursor == "magick"
             local holding_weapon
             local char_state = EntityAux.state(unit, "character")
+            local owns_this = pdNetworkServerUnit.owning_peer_is_self(unit)
 
             if char_state then
                 holding_weapon = GamepadSupportMod.gamepad_mapper and GamepadSupportMod.gamepad_mapper:is_input_active("weapon_hold", "button") or false
@@ -425,6 +447,63 @@ kUtil.task_scheduler.add(function ()
                 end
             end
 
+            repeat
+                if not owns_this then
+                    break
+                end
+
+                local gamepad_cursor = GamepadSupportMod.gamepad_mapper and GamepadSupportMod.gamepad_mapper:is_input_active("cursor", "axis")
+                if not gamepad_cursor then
+                    break
+                end
+
+                local x, y = gamepad_cursor[1], gamepad_cursor[2]
+                local last_x, last_y = GamepadSupportMod.state.last_raw_cur_axis[1], GamepadSupportMod.state.last_raw_cur_axis[2]
+                local diff = math.abs(x - last_x) + math.abs(y - last_y)
+                local time = os.clock()
+
+                if diff > 0.01 then
+                    GamepadSupportMod.state.last_cursor_move_time = time
+                    GamepadSupportMod.state.last_raw_cur_axis = {x, y}
+                end
+
+                if (time - GamepadSupportMod.state.last_cursor_move_time) > 0.15 then
+                    break
+                end
+
+                local unit_world_position = Unit.world_position(unit, 0)
+                unit_world_position[3] = unit_world_position[3] + 1
+                local cur_world_pos = unit_world_position + Vector3(x, y, 0) * (GamepadSupportMod.settings["aiming range multiplie"] or 17.5)
+                if not cur_world_pos then
+                    break
+                end
+
+                local screen_width, screen_height = Application.resolution()
+                local screen_pos = Camera.world_to_screen(camera.camera, cur_world_pos, Vector3(screen_width, screen_height, 0))
+                if not screen_pos then
+                    break
+                end
+
+                x, y = screen_pos[1], screen_pos[3]
+                x = math.min(screen_width, math.max(0, x))
+                y = math.min(screen_height, math.max(0, y))
+
+                gamepad_is_aiming = true
+                input_data.cursor[1], input_data.cursor[2] = x, y
+                GamepadSupportMod.state.cur_cursor_pos = {x, y}
+                GamepadSupportMod.state.is_gamepad_looking = true
+                Window.set_cursor_position(Vector2(x, y))
+
+                local dir = cur_world_pos - unit_world_position
+                dir[3] = 0
+                local x, y, z = Vector3.to_elements(Vector3.normalize(dir))
+
+                local freen_world_direction = state.freen_world_direction
+                if freen_world_direction then
+                    freen_world_direction[1], freen_world_direction[2] = x, y
+                end
+            until true
+
             if self.input_disabled or input.disabled or input.disabled_ui then
                 disable_input_data(input_data)
             elseif input_data.cursor then
@@ -444,47 +523,6 @@ kUtil.task_scheduler.add(function ()
                     end
                 end
 
-                repeat
-                    local gamepad_cursor = GamepadSupportMod.gamepad_mapper and GamepadSupportMod.gamepad_mapper:is_input_active("cursor", "axis")
-                    if not gamepad_cursor then
-                        break
-                    end
-
-                    local x, y = gamepad_cursor[1], gamepad_cursor[2]
-                    local unit_world_position = Unit.world_position(unit, 0)
-                    unit_world_position[3] = unit_world_position[3] + 1
-                    local cur_world_pos = unit_world_position + Vector3(x, y, 0) * (GamepadSupportMod.settings["aiming range multiplie"] or 17.5)
-                    if not cur_world_pos then
-                        break
-                    end
-
-                    local screen_width, screen_height = Application.resolution()
-                    local screen_pos = Camera.world_to_screen(camera.camera, cur_world_pos, Vector3(screen_width, screen_height, 0))
-                    if not screen_pos then
-                        break
-                    end
-
-                    gamepad_is_aiming = true
-
-                    x, y = screen_pos[1], screen_pos[3]
-                    x = math.min(screen_width, math.max(0, x))
-                    y = math.min(screen_height, math.max(0, y))
-                    input_data.cursor[1], input_data.cursor[2] = x, y
-                    GamepadSupportMod.state.cur_cursor_pos = {x, y, 0}
-                    GamepadSupportMod.state.is_gamepad_looking = true
-
-                    Window.set_cursor_position(Vector2(x, y))
-
-                    local dir = cur_world_pos - unit_world_position
-                    dir[3] = 0
-                    local x, y, z = Vector3.to_elements(Vector3.normalize(dir))
-
-                    local freen_world_direction = state.freen_world_direction
-                    if freen_world_direction then
-                        freen_world_direction[1], freen_world_direction[2] = x, y
-                    end
-                until true
-
                 local cursor = input_data.cursor
                 local cam, dir = camera:screen_ray(cursor[1], cursor[2])
                 local plane = Plane.from_point_and_normal(unit_world_position, Vector3.up())
@@ -499,7 +537,7 @@ kUtil.task_scheduler.add(function ()
                 local override_intersect_pos
                 local allow_moveto_unit = true
 
-                if not gamepad_is_aiming and pdNetworkServerUnit.owning_peer_is_self(unit) then
+                if not gamepad_is_aiming and owns_this then
                     local plane = Plane.from_point_and_normal(unit_world_position + Vector3.up(), Vector3.up())
                     local t = Intersect.ray_plane(cam, dir, plane)
 
@@ -518,7 +556,7 @@ kUtil.task_scheduler.add(function ()
                     end
                 end
 
-                if GamepadSupportMod.gamepad_mapper then
+                if owns_this and GamepadSupportMod.gamepad_mapper then
                     local move_axis = GamepadSupportMod.gamepad_mapper:is_input_active("movement", "axis")
 
                     if move_axis then
@@ -543,25 +581,27 @@ kUtil.task_scheduler.add(function ()
 
                 local activate_position = not ignore_click and intersect_pos
 
-                if GamepadSupportMod.state.right_click_pressed then
-                    if magick_cursor then
-                        input_data.activate_magick = not internal.gamepad_magick_hold
-                        internal.gamepad_magick_hold = true
-                        input_data.spell_channel = 1
-                        input_data.hold_magick = 1
-                        input_data.right_click_hold = 1
-                        input_data.cast_spell = 1
-
-                        if intersect_pos then
-                            activate_position = intersect_pos
+                if owns_this then
+                    if GamepadSupportMod.state.right_click_pressed then
+                        if magick_cursor then
+                            input_data.activate_magick = not internal.gamepad_magick_hold
+                            internal.gamepad_magick_hold = true
+                            input_data.spell_channel = 1
+                            input_data.hold_magick = 1
+                            input_data.right_click_hold = 1
+                            input_data.cast_spell = 1
+    
+                            if intersect_pos then
+                                activate_position = intersect_pos
+                            end
                         end
+                    elseif internal.gamepad_magick_hold then
+                        internal.gamepad_magick_hold = false
+                        input_data.activate_magick = true
+                        input_data.hold_magick = 0
+                        input_data.right_click_hold = 0
+                        input_data.cast_spell = 0
                     end
-                elseif internal.gamepad_magick_hold then
-                    internal.gamepad_magick_hold = false
-                    input_data.activate_magick = true
-                    input_data.hold_magick = 0
-                    input_data.right_click_hold = 0
-                    input_data.cast_spell = 0
                 end
 
                 CharacterSystemAux_update_pending_magicks(unit, input, input_data, internal, activate_position, unit_spawner, self.entity_manager, cane_navmeshquery, dt)
@@ -706,133 +746,135 @@ kUtil.task_scheduler.add(function ()
                 end
             end
 
-            local chg_is_charging = input_data.spell_channel > 0.5 and internal.prev_chenneling_input or holding_weapon
+            if owns_this then
+                local chg_is_charging = input_data.spell_channel > 0.5 and internal.prev_chenneling_input or holding_weapon
 
-            if not GamepadSupportMod.state.casting_new_spell and chg_is_charging and (not magick_cursor) then
-                repeat
-                    if GamepadSupportMod.state.casting_weapon_attack then
-                        break
-                    end
-
-                    if internal.spellcast_ext and internal.spellcast_ext.internal and internal.spellcast_ext.internal._waiting_spell then
-                        local waiting_spell = internal.spellcast_ext.internal._waiting_spell
-                        local waiting_data = waiting_spell.data
-
-                        if waiting_data then
-                            local elements = waiting_data.elements
-
-                            if elements then
-                                local has_ice = elements.ice > 0
-                                local has_rock = elements.earth > 0
-
-                                internal.chg_aim_spell_elems = {
-                                    has_ice = has_ice,
-                                    has_rock = has_rock,
-                                    rock_amnt = elements.earth,
-                                    ice_amnt = elements.ice
-                                }
-
-                                if not (has_ice or has_rock) then
-                                    break
+                if not GamepadSupportMod.state.casting_new_spell and chg_is_charging and (not magick_cursor) then
+                    repeat
+                        if GamepadSupportMod.state.casting_weapon_attack then
+                            break
+                        end
+    
+                        if internal.spellcast_ext and internal.spellcast_ext.internal and internal.spellcast_ext.internal._waiting_spell then
+                            local waiting_spell = internal.spellcast_ext.internal._waiting_spell
+                            local waiting_data = waiting_spell.data
+    
+                            if waiting_data then
+                                local elements = waiting_data.elements
+    
+                                if elements then
+                                    local has_ice = elements.ice > 0
+                                    local has_rock = elements.earth > 0
+    
+                                    internal.chg_aim_spell_elems = {
+                                        has_ice = has_ice,
+                                        has_rock = has_rock,
+                                        rock_amnt = elements.earth,
+                                        ice_amnt = elements.ice
+                                    }
+    
+                                    if not (has_ice or has_rock) then
+                                        break
+                                    end
                                 end
                             end
                         end
-                    end
-
-                    local rel_spell_elems = internal.chg_aim_spell_elems
-                    if rel_spell_elems and not (rel_spell_elems.has_ice or rel_spell_elems.has_rock) then
-                        break
-                    end
-
-                    local desired_units
-                    local dot_distance = 1.75
-
-                    local charge_time = internal.chg_charge_time or 0
-                    charge_time = charge_time + (charge_time > 2.0 and 0 or dt)
-                    internal.chg_charge_time = charge_time
-
-                    if charge_time == 0 then
-                        internal.chg_count_aim_units = 0
-                    end
-
-                    local covered_distance = charge_time * 10
-
-                    if rel_spell_elems then
-                        if rel_spell_elems.has_rock and not rel_spell_elems.has_ice then
-                            covered_distance = covered_distance + 1
-                            local rock_amnt = rel_spell_elems.rock_amnt
-                            local mult = rock_amnt == 3 and 0.63 or (rock_amnt == 2 and 0.80 or 1.0)
-
-                            covered_distance = ((rock_amnt - 2) * 0.5 + covered_distance) * mult
-                        elseif not rel_spell_elems.has_rock then
-                            covered_distance = (covered_distance - 1.5) / 1.35
+    
+                        local rel_spell_elems = internal.chg_aim_spell_elems
+                        if rel_spell_elems and not (rel_spell_elems.has_ice or rel_spell_elems.has_rock) then
+                            break
                         end
-
-                        covered_distance = covered_distance < 30 and covered_distance or 30
-                        desired_units = math.floor(covered_distance / dot_distance)
-                        internal.chg_fixed_length = false
-                    else
-                        desired_units = 4
-                        covered_distance = dot_distance * (desired_units + 1)
-                        internal.chg_fixed_length = true
-                    end
-
-                    covered_distance = covered_distance >= 0 and covered_distance or 0
-
-                    if not internal.chg_aim_units then
-                        internal.chg_aim_units = {}
-                        internal.chg_colored_dots = 1
-                        internal.chg_aim_units[1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX, {name = "\xb5\xce\x3d\xd0\x83\x1b\x92\xa8", path = "\x30\x30\x7d\xd0\x9e\x16\xbe\x3b"})
-                    end
-
-                    if internal.chg_aim_units then
-                        while #internal.chg_aim_units < (desired_units + 1) do
-                            internal.chg_aim_units[#internal.chg_aim_units + 1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX)
+    
+                        local desired_units
+                        local dot_distance = 1.75
+    
+                        local charge_time = internal.chg_charge_time or 0
+                        charge_time = charge_time + (charge_time > 2.0 and 0 or dt)
+                        internal.chg_charge_time = charge_time
+    
+                        if charge_time == 0 then
+                            internal.chg_count_aim_units = 0
                         end
-
-                        local rot, aim, pos
-                        local freen_world_direction = state.freen_world_direction
-                        pos = Unit.local_position(unit, 0)
-
-                        if freen_world_direction and freen_world_direction[1] and freen_world_direction[2] then
-                            aim = Vector3(freen_world_direction[1], freen_world_direction[2], 0)
-                            rot = Quaternion.look(aim, Vector3.up())
+    
+                        local covered_distance = charge_time * 10
+    
+                        if rel_spell_elems then
+                            if rel_spell_elems.has_rock and not rel_spell_elems.has_ice then
+                                covered_distance = covered_distance + 1
+                                local rock_amnt = rel_spell_elems.rock_amnt
+                                local mult = rock_amnt == 3 and 0.63 or (rock_amnt == 2 and 0.80 or 1.0)
+    
+                                covered_distance = ((rock_amnt - 2) * 0.5 + covered_distance) * mult
+                            elseif not rel_spell_elems.has_rock then
+                                covered_distance = (covered_distance - 1.5) / 1.35
+                            end
+    
+                            covered_distance = covered_distance < 30 and covered_distance or 30
+                            desired_units = math.floor(covered_distance / dot_distance)
+                            internal.chg_fixed_length = false
                         else
-                            rot = Unit.local_rotation(unit, 0)
-                            aim = Quaternion.forward(rot)
+                            desired_units = 4
+                            covered_distance = dot_distance * (desired_units + 1)
+                            internal.chg_fixed_length = true
                         end
-
-                        pos[3] = pos[3] + 0.05
-                        local end_pos = pos + aim * (covered_distance + 1)
-
-                        for i, aim_unit in ipairs(internal.chg_aim_units) do
-                            Unit.teleport_local_position(aim_unit, 0, end_pos - (i - 1) * dot_distance * aim)
-                            Unit.teleport_local_rotation(aim_unit, 0, rot)
+    
+                        covered_distance = covered_distance >= 0 and covered_distance or 0
+    
+                        if not internal.chg_aim_units then
+                            internal.chg_aim_units = {}
+                            internal.chg_colored_dots = 1
+                            internal.chg_aim_units[1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX, {name = "\xb5\xce\x3d\xd0\x83\x1b\x92\xa8", path = "\x30\x30\x7d\xd0\x9e\x16\xbe\x3b"})
                         end
-                    end
-                until true
-            else
-                if internal.chg_casting_new_spell then
-                    GamepadSupportMod.state.casting_new_spell = false
-                    GamepadSupportMod.state.casting_weapon_attack = false
+    
+                        if internal.chg_aim_units then
+                            while #internal.chg_aim_units < (desired_units + 1) do
+                                internal.chg_aim_units[#internal.chg_aim_units + 1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX)
+                            end
+    
+                            local rot, aim, pos
+                            local freen_world_direction = state.freen_world_direction
+                            pos = Unit.local_position(unit, 0)
+    
+                            if freen_world_direction and freen_world_direction[1] and freen_world_direction[2] then
+                                aim = Vector3(freen_world_direction[1], freen_world_direction[2], 0)
+                                rot = Quaternion.look(aim, Vector3.up())
+                            else
+                                rot = Unit.local_rotation(unit, 0)
+                                aim = Quaternion.forward(rot)
+                            end
+    
+                            pos[3] = pos[3] + 0.05
+                            local end_pos = pos + aim * (covered_distance + 1)
+    
+                            for i, aim_unit in ipairs(internal.chg_aim_units) do
+                                Unit.teleport_local_position(aim_unit, 0, end_pos - (i - 1) * dot_distance * aim)
+                                Unit.teleport_local_rotation(aim_unit, 0, rot)
+                            end
+                        end
+                    until true
                 else
-                    internal.chg_casting_new_spell = GamepadSupportMod.state.casting_new_spell
-                end
-
-                if internal.chg_aim_units then
-                    for i, aim_unit in ipairs(internal.chg_aim_units) do
-                        unit_spawner:mark_for_deletion(aim_unit)
+                    if internal.chg_casting_new_spell then
+                        GamepadSupportMod.state.casting_new_spell = false
+                        GamepadSupportMod.state.casting_weapon_attack = false
+                    else
+                        internal.chg_casting_new_spell = GamepadSupportMod.state.casting_new_spell
                     end
-
-                    internal.chg_aim_units = nil
+    
+                    if internal.chg_aim_units then
+                        for i, aim_unit in ipairs(internal.chg_aim_units) do
+                            unit_spawner:mark_for_deletion(aim_unit)
+                        end
+    
+                        internal.chg_aim_units = nil
+                    end
+    
+                    internal.chg_charge_time = 0
+                    internal.chg_fixed_length = false
+                    internal.chg_aim_spell_elems = nil
                 end
 
-                internal.chg_charge_time = 0
-                internal.chg_fixed_length = false
-                internal.chg_aim_spell_elems = nil
+                internal.prev_chenneling_input = input_data.spell_channel > 0.5
             end
-
-            internal.prev_chenneling_input = input_data.spell_channel > 0.5
 
             if input.stop_move_destination then
                 if input_data.do_move < 0.5 then

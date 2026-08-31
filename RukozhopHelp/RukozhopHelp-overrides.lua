@@ -236,7 +236,9 @@ kUtil.loop_try_repalce_function(_G, "SpellWheelSystem", "update", function (self
 end)
 
 kUtil.loop_try_prehook_function(_G, "ClientSpellCastingSystem", "_handle_spellcast", function (self, unit, input, internal, state, target)
-    RukozhopHelpMod.state.casting_new_spell = true
+    if unit and Unit.alive(unit) and pdNetworkServerUnit.owning_peer_is_self(unit) then
+        RukozhopHelpMod.state.casting_new_spell = true
+    end
 end)
 
 local tmp_context
@@ -249,13 +251,10 @@ kUtil.loop_try_posthook_function(_G, "ClientSpells_Weapon", "update", function(d
     local my_context = tmp_context or context
     local caster = my_context.caster or my_context.caster
 
-    if caster and Unit.alive(caster) then
-        local owns_this = pdNetworkServerUnit.owning_peer_is_self(caster)
+    if caster and Unit.alive(caster) and pdNetworkServerUnit.owning_peer_is_self(caster) then
         local state = data.state
 
-        if owns_this then
-            RukozhopHelpMod.state.casting_weapon_attack = state == "charge_attacking_waiting_for_end" or state == "chain_attacking_waiting_for_end" or state == "chain_attacking_in_window"
-        end
+        RukozhopHelpMod.state.casting_weapon_attack = state == "charge_attacking_waiting_for_end" or state == "chain_attacking_waiting_for_end" or state == "chain_attacking_in_window"
     end
 
     tmp_context = nil
@@ -432,6 +431,7 @@ kUtil.loop_try_repalce_function(_G, "ClientCharacterSystem", "update_characters"
         local state = extension.state
         local input_controller_state = internal.input_ext.state
         local input_data = input_controller_state.input_data
+        local owns_this = pdNetworkServerUnit.owning_peer_is_self(unit)
 
         local magick_cursor = internal.current_cursor == "magick"
 
@@ -653,7 +653,7 @@ kUtil.loop_try_repalce_function(_G, "ClientCharacterSystem", "update_characters"
 
                 d:reset()
 
-                if activate_position and (input_data.spell_channel > 0 or input_data.self_channel > 0) and pdNetworkServerUnit.owning_peer_is_self(unit) then
+                if activate_position and (input_data.spell_channel > 0 or input_data.self_channel > 0) and owns_this then
                     local freen_world_direction = state.freen_world_direction
                     local diff = activate_position - unit_world_position
 
@@ -714,133 +714,135 @@ kUtil.loop_try_repalce_function(_G, "ClientCharacterSystem", "update_characters"
             end
         end
 
-        local chg_is_charging = input_data.spell_channel > 0.5 and internal.prev_chenneling_input
-
-        if not RukozhopHelpMod.state.casting_new_spell and RukozhopHelpMod.settings.aiming_recticles_enabled and chg_is_charging and (not magick_cursor) then
-            repeat
-                if RukozhopHelpMod.state.casting_weapon_attack then
-                    break
-                end
-
-                if internal.spellcast_ext and internal.spellcast_ext.internal and internal.spellcast_ext.internal._waiting_spell then
-                    local waiting_spell = internal.spellcast_ext.internal._waiting_spell
-                    local waiting_data = waiting_spell.data
-
-                    if waiting_data then
-                        local elements = waiting_data.elements
-
-                        if elements then
-                            local has_ice = elements.ice > 0
-                            local has_rock = elements.earth > 0
-
-                            internal.chg_aim_spell_elems = {
-                                has_ice = has_ice,
-                                has_rock = has_rock,
-                                rock_amnt = elements.earth,
-                                ice_amnt = elements.ice
-                            }
-
-                            if not (has_ice or has_rock) then
-                                break
+        if owns_this then
+            local chg_is_charging = input_data.spell_channel > 0.5 and internal.prev_chenneling_input
+    
+            if not RukozhopHelpMod.state.casting_new_spell and RukozhopHelpMod.settings.aiming_recticles_enabled and chg_is_charging and (not magick_cursor) then
+                repeat
+                    if RukozhopHelpMod.state.casting_weapon_attack then
+                        break
+                    end
+    
+                    if internal.spellcast_ext and internal.spellcast_ext.internal and internal.spellcast_ext.internal._waiting_spell then
+                        local waiting_spell = internal.spellcast_ext.internal._waiting_spell
+                        local waiting_data = waiting_spell.data
+    
+                        if waiting_data then
+                            local elements = waiting_data.elements
+    
+                            if elements then
+                                local has_ice = elements.ice > 0
+                                local has_rock = elements.earth > 0
+    
+                                internal.chg_aim_spell_elems = {
+                                    has_ice = has_ice,
+                                    has_rock = has_rock,
+                                    rock_amnt = elements.earth,
+                                    ice_amnt = elements.ice
+                                }
+    
+                                if not (has_ice or has_rock) then
+                                    break
+                                end
                             end
                         end
                     end
-                end
-
-                local rel_spell_elems = internal.chg_aim_spell_elems
-                if rel_spell_elems and not (rel_spell_elems.has_ice or rel_spell_elems.has_rock) then
-                    break
-                end
-
-                local desired_units
-                local dot_distance = 1.75
-
-                local charge_time = internal.chg_charge_time or 0
-                charge_time = charge_time + (charge_time > 2.0 and 0 or dt)
-                internal.chg_charge_time = charge_time
-
-                if charge_time == 0 then
-                    internal.chg_count_aim_units = 0
-                end
-
-                local covered_distance = charge_time * 10
-
-                if rel_spell_elems then
-                    if rel_spell_elems.has_rock and not rel_spell_elems.has_ice then
-                        covered_distance = covered_distance + 1
-                        local rock_amnt = rel_spell_elems.rock_amnt
-                        local mult = rock_amnt == 3 and 0.63 or (rock_amnt == 2 and 0.80 or 1.0)
-
-                        covered_distance = ((rock_amnt - 2) * 0.5 + covered_distance) * mult
-                    elseif not rel_spell_elems.has_rock then
-                        covered_distance = (covered_distance - 1.5) / 1.35
+    
+                    local rel_spell_elems = internal.chg_aim_spell_elems
+                    if rel_spell_elems and not (rel_spell_elems.has_ice or rel_spell_elems.has_rock) then
+                        break
                     end
-
-                    covered_distance = covered_distance < 30 and covered_distance or 30
-                    desired_units = math.floor(covered_distance / dot_distance)
-                    internal.chg_fixed_length = false
-                else
-                    desired_units = 4
-                    covered_distance = dot_distance * (desired_units + 1)
-                    internal.chg_fixed_length = true
-                end
-
-                covered_distance = covered_distance >= 0 and covered_distance or 0
-
-                if not internal.chg_aim_units then
-                    internal.chg_aim_units = {}
-                    internal.chg_colored_dots = 1
-                    internal.chg_aim_units[1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX, {name = "\xb5\xce\x3d\xd0\x83\x1b\x92\xa8", path = "\x30\x30\x7d\xd0\x9e\x16\xbe\x3b"})
-                end
-
-                if internal.chg_aim_units then
-                    while #internal.chg_aim_units < (desired_units + 1) do
-                        internal.chg_aim_units[#internal.chg_aim_units + 1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX)
+    
+                    local desired_units
+                    local dot_distance = 1.75
+    
+                    local charge_time = internal.chg_charge_time or 0
+                    charge_time = charge_time + (charge_time > 2.0 and 0 or dt)
+                    internal.chg_charge_time = charge_time
+    
+                    if charge_time == 0 then
+                        internal.chg_count_aim_units = 0
                     end
-
-                    local rot, aim, pos
-                    local freen_world_direction = state.freen_world_direction
-                    pos = Unit.local_position(unit, 0)
-
-                    if freen_world_direction and freen_world_direction[1] and freen_world_direction[2] then
-                        aim = Vector3(freen_world_direction[1], freen_world_direction[2], 0)
-                        rot = Quaternion.look(aim, Vector3.up())
+    
+                    local covered_distance = charge_time * 10
+    
+                    if rel_spell_elems then
+                        if rel_spell_elems.has_rock and not rel_spell_elems.has_ice then
+                            covered_distance = covered_distance + 1
+                            local rock_amnt = rel_spell_elems.rock_amnt
+                            local mult = rock_amnt == 3 and 0.63 or (rock_amnt == 2 and 0.80 or 1.0)
+    
+                            covered_distance = ((rock_amnt - 2) * 0.5 + covered_distance) * mult
+                        elseif not rel_spell_elems.has_rock then
+                            covered_distance = (covered_distance - 1.5) / 1.35
+                        end
+    
+                        covered_distance = covered_distance < 30 and covered_distance or 30
+                        desired_units = math.floor(covered_distance / dot_distance)
+                        internal.chg_fixed_length = false
                     else
-                        rot = Unit.local_rotation(unit, 0)
-                        aim = Quaternion.forward(rot)
+                        desired_units = 4
+                        covered_distance = dot_distance * (desired_units + 1)
+                        internal.chg_fixed_length = true
                     end
-
-                    pos[3] = pos[3] + 0.05
-                    local end_pos = pos + aim * (covered_distance + 1)
-
-                    for i, aim_unit in ipairs(internal.chg_aim_units) do
-                        Unit.teleport_local_position(aim_unit, 0, end_pos - (i - 1) * dot_distance * aim)
-                        Unit.teleport_local_rotation(aim_unit, 0, rot)
+    
+                    covered_distance = covered_distance >= 0 and covered_distance or 0
+    
+                    if not internal.chg_aim_units then
+                        internal.chg_aim_units = {}
+                        internal.chg_colored_dots = 1
+                        internal.chg_aim_units[1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX, {name = "\xb5\xce\x3d\xd0\x83\x1b\x92\xa8", path = "\x30\x30\x7d\xd0\x9e\x16\xbe\x3b"})
                     end
-                end
-            until true
-        else
-            if internal.chg_casting_new_spell then
-                RukozhopHelpMod.state.casting_new_spell = false
-                RukozhopHelpMod.state.casting_weapon_attack = false
+    
+                    if internal.chg_aim_units then
+                        while #internal.chg_aim_units < (desired_units + 1) do
+                            internal.chg_aim_units[#internal.chg_aim_units + 1] = spawn_aim_unit(unit_spawner, DOT_AIM_TEX)
+                        end
+    
+                        local rot, aim, pos
+                        local freen_world_direction = state.freen_world_direction
+                        pos = Unit.local_position(unit, 0)
+    
+                        if freen_world_direction and freen_world_direction[1] and freen_world_direction[2] then
+                            aim = Vector3(freen_world_direction[1], freen_world_direction[2], 0)
+                            rot = Quaternion.look(aim, Vector3.up())
+                        else
+                            rot = Unit.local_rotation(unit, 0)
+                            aim = Quaternion.forward(rot)
+                        end
+    
+                        pos[3] = pos[3] + 0.05
+                        local end_pos = pos + aim * (covered_distance + 1)
+    
+                        for i, aim_unit in ipairs(internal.chg_aim_units) do
+                            Unit.teleport_local_position(aim_unit, 0, end_pos - (i - 1) * dot_distance * aim)
+                            Unit.teleport_local_rotation(aim_unit, 0, rot)
+                        end
+                    end
+                until true
             else
-                internal.chg_casting_new_spell = RukozhopHelpMod.state.casting_new_spell
-            end
-
-            if internal.chg_aim_units then
-                for i, aim_unit in ipairs(internal.chg_aim_units) do
-                    unit_spawner:mark_for_deletion(aim_unit)
+                if internal.chg_casting_new_spell then
+                    RukozhopHelpMod.state.casting_new_spell = false
+                    RukozhopHelpMod.state.casting_weapon_attack = false
+                else
+                    internal.chg_casting_new_spell = RukozhopHelpMod.state.casting_new_spell
                 end
-
-                internal.chg_aim_units = nil
+    
+                if internal.chg_aim_units then
+                    for i, aim_unit in ipairs(internal.chg_aim_units) do
+                        unit_spawner:mark_for_deletion(aim_unit)
+                    end
+    
+                    internal.chg_aim_units = nil
+                end
+    
+                internal.chg_charge_time = 0
+                internal.chg_fixed_length = false
+                internal.chg_aim_spell_elems = nil
             end
-
-            internal.chg_charge_time = 0
-            internal.chg_fixed_length = false
-            internal.chg_aim_spell_elems = nil
+    
+            internal.prev_chenneling_input = input_data.spell_channel > 0.5
         end
-
-        internal.prev_chenneling_input = input_data.spell_channel > 0.5
 
         if input.stop_move_destination then
             if internal.move_destination then

@@ -4,7 +4,7 @@ local mod_inited = false
 
 local MY_CUSTOM_HIGHLIGHT_KEY = "mod_team_outline"
 
-function apply_game_outline(target_unit, enable, color_vector)
+local function apply_game_outline(target_unit, enable, color_vector)
     if not target_unit or not Unit.alive(target_unit) then
         k_log("[TeamOutlines] unit is not valid :: " .. tostring(target_unit))
         return

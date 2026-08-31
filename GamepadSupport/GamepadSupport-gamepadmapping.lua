@@ -299,12 +299,12 @@ if not _G.GamepadMapper then
             local axis = axis_array and axis_array[1]
 
             local old_input = self.input_sates[input]
-            local was_zero
-            local old_x, old_y
+            --local was_zero = 0
+            local old_x, old_y = 0, 0
             local a_x, a_y
 
             if old_input then
-                was_zero = old_input.is_zero or false
+                --was_zero = old_input.is_zero and (old_input.was_zero + 1) or 0
                 old_x, old_y = old_input.axis[1], old_input.axis[2]
             end
 
@@ -317,7 +317,7 @@ if not _G.GamepadMapper then
             if a_x then
                 a_x = math.abs(a_x) > deadzone_min and a_x or 0
                 a_y = math.abs(a_y) > deadzone_min and a_y or 0
-                local is_zero = a_x == 0 and a_y == 0
+                --local is_zero = a_x == 0 and a_y == 0
 
                 if input == "cursor" then
                     self.input_sates.cursor_amount = math.sqrt(a_x * a_x + a_y * a_y)
@@ -327,8 +327,8 @@ if not _G.GamepadMapper then
                 end
 
                 self.input_sates[input] = {
-                    was_zero = was_zero,
-                    is_zero = is_zero,
+                    --was_zero = was_zero,
+                    --is_zero = is_zero,
                     axis = {
                         -a_x,
                         a_y,
@@ -337,8 +337,8 @@ if not _G.GamepadMapper then
                 }
             else
                 self.input_sates[input] = {
-                    was_zero = was_zero,
-                    is_zero = true,
+                    --was_zero = was_zero,
+                    --is_zero = true,
                     axis = {
                         old_x,
                         old_y,
@@ -378,11 +378,14 @@ if not _G.GamepadMapper then
         if behavior == "axis" then
             local axis_input = self.input_sates[action_name]
 
-            if axis_input.was_zero and axis_input.is_zero then
-                return nil
-            else
+            --if (axis_input.was_zero > 4) and axis_input.is_zero then
+            --    return nil
+            --else
+            --    if axis_input.was_zero > 3 then
+            --        k_log_table(self.input_sates[action_name].axis, 1, "    ")
+            --    end
                 return table.deep_clone(self.input_sates[action_name].axis)
-            end
+            --end
         end
 
         if behavior ~= func then

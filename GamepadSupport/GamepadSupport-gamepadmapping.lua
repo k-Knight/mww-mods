@@ -376,16 +376,7 @@ if not _G.GamepadMapper then
         local behavior = mapping.func
 
         if behavior == "axis" then
-            local axis_input = self.input_sates[action_name]
-
-            --if (axis_input.was_zero > 4) and axis_input.is_zero then
-            --    return nil
-            --else
-            --    if axis_input.was_zero > 3 then
-            --        k_log_table(self.input_sates[action_name].axis, 1, "    ")
-            --    end
-                return table.deep_clone(self.input_sates[action_name].axis)
-            --end
+            return table.deep_clone(self.input_sates[action_name].axis)
         end
 
         if behavior ~= func then
